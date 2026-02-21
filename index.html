@@ -8,61 +8,6 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>MoneyTracker 7.0 - Gestione Spese</title>
     <link rel="manifest" href="manifest.json">
-    <script>
-(function(){
-  function ensurePanel(){
-    var el=document.getElementById('mt-debug-panel');
-    if(!el){
-      el=document.createElement('div');
-      el.id='mt-debug-panel';
-      el.style.cssText='position:fixed;inset:0;z-index:2147483647;background:#111;color:#0f0;padding:12px;white-space:pre-wrap;overflow:auto;font:12px/1.35 monospace;display:none';
-      document.documentElement.appendChild(el);
-    }
-    return el;
-  }
-  function log(msg){
-    var el=ensurePanel();
-    el.style.display='block';
-    el.textContent += msg + "\n";
-  }
-  window.__MT_DEBUG_LOG__=log;
-
-  window.addEventListener('error', function(e){
-    log('❌ ERROR: ' + (e.message || e.error || 'unknown'));
-    if(e.filename) log('   at ' + e.filename + ':' + e.lineno + ':' + e.colno);
-    if(e.error && e.error.stack) log('STACK:\n' + e.error.stack);
-  });
-  window.addEventListener('unhandledrejection', function(e){
-    var r=e.reason;
-    log('❌ PROMISE: ' + (r && r.message ? r.message : String(r)));
-    if(r && r.stack) log('STACK:\n' + r.stack);
-  });
-
-  document.addEventListener('DOMContentLoaded', function(){
-    // show a minimal boot message so it's never pure white
-    var root=document.getElementById('root');
-    if(root && root.innerHTML.trim()===''){
-      root.innerHTML='<div style="padding:24px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#333">' +
-        '<div style="font-size:18px;font-weight:700;margin-bottom:6px">MoneyTracker 7.0</div>' +
-        '<div style="color:#666">Caricamento…</div>' +
-      '</div>';
-    }
-    // after 8s, if app didn't render, show what is missing
-    setTimeout(function(){
-      var missing=[];
-      if(!window.React) missing.push('React');
-      if(!window.ReactDOM) missing.push('ReactDOM');
-      if(!window.Babel) missing.push('Babel');
-      if(missing.length){
-        log('⏱️ Timeout: librerie non caricate: ' + missing.join(', '));
-      }else{
-        log('⏱️ Timeout: librerie ok, ma app non renderizzata. Controlla errori sopra.');
-      }
-    }, 8000);
-  });
-})();
-</script>
-
     
 
     <script>
@@ -77,9 +22,9 @@
     </script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js';"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js';"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js';"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/sql.js@1.8.0/dist/sql-wasm.js';"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js';" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/sql.js@1.8.0/dist/sql-wasm.js';" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <style>
         * {
             margin: 0;
@@ -628,18 +573,49 @@
     <div id="root"></div>
     <script>
         // Mostra qualsiasi errore JS direttamente sullo schermo
-        window.onerror = function(msg, src, line, col, err) {
-            document.getElementById('root').innerHTML =
-                '<div style="padding:20px;font-family:sans-serif;background:#fff">' +
-                '<h2 style="color:#f44336">❌ Errore JavaScript</h2>' +
-                '<p style="color:#333;word-break:break-all"><b>Messaggio:</b> ' + msg + '</p>' +
-                '<p style="color:#333"><b>File:</b> ' + src + '</p>' +
-                '<p style="color:#333"><b>Riga:</b> ' + line + ':' + col + '</p>' +
-                '<p style="color:#333"><b>Stack:</b> ' + (err && err.stack ? err.stack : 'N/A') + '</p>' +
-                '<button onclick="location.reload()" style="margin-top:15px;padding:12px 24px;background:#667eea;color:white;border:none;border-radius:8px;font-size:16px">🔄 Ricarica</button>' +
-                '</div>';
-            return false;
-        };
+        // Mostra qualsiasi errore JS direttamente sullo schermo (mobile-friendly)
+        (function(){
+          function esc(s){return String(s).replace(/[&<>"]/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));}
+          function render(title, bodyHtml){
+            var root=document.getElementById('root');
+            if(!root) return;
+            root.innerHTML =
+              '<div style="padding:16px;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#fff;min-height:100vh">' +
+              '<h2 style="color:#f44336;margin:0 0 8px 0">❌ '+esc(title)+'</h2>' +
+              bodyHtml +
+              '</div>';
+          }
+          window.addEventListener('error', function(e){
+            var msg = e && e.message ? e.message : 'Errore sconosciuto';
+            var src = e && e.filename ? e.filename : '';
+            var line = e && e.lineno ? e.lineno : '';
+            var col  = e && e.colno ? e.colno : '';
+            var stack = e && e.error && e.error.stack ? e.error.stack : '';
+            if (msg === 'Script error.' || msg === 'Script error') {
+              render('Script error.',
+                '<p style="margin:8px 0 0 0">Questo errore è tipico quando un errore avviene in uno <b>script esterno</b> (CDN) senza dettagli disponibili.</p>' +
+                '<p style="margin:8px 0 0 0">Fix: aggiungi <code>crossorigin="anonymous"</code> agli script CDN e usa fallback CDN. Poi ricarica.</p>');
+              return;
+            }
+            render('Errore JavaScript',
+              '<div style="margin-top:10px;font-size:13px;line-height:1.4">' +
+              '<div><b>Messaggio:</b> '+esc(msg)+'</div>' +
+              (src ? '<div><b>File:</b> '+esc(src)+' '+esc(line)+':'+esc(col)+'</div>' : '') +
+              (stack ? '<pre style="margin-top:10px;white-space:pre-wrap;background:#f6f6f6;padding:10px;border-radius:8px">'+esc(stack)+'</pre>' : '') +
+              '</div>');
+          }, true);
+
+          window.addEventListener('unhandledrejection', function(e){
+            var reason = e && e.reason ? e.reason : 'Promise rejection';
+            var msg = reason && reason.message ? reason.message : String(reason);
+            var stack = reason && reason.stack ? reason.stack : '';
+            render('Promise rejection',
+              '<div style="margin-top:10px;font-size:13px;line-height:1.4">' +
+              '<div><b>Messaggio:</b> '+esc(msg)+'</div>' +
+              (stack ? '<pre style="margin-top:10px;white-space:pre-wrap;background:#f6f6f6;padding:10px;border-radius:8px">'+esc(stack)+'</pre>' : '') +
+              '</div>');
+          });
+        })();
         window.addEventListener('unhandledrejection', function(e) {
             document.getElementById('root').innerHTML =
                 '<div style="padding:20px;font-family:sans-serif;background:#fff">' +

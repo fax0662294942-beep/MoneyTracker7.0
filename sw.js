@@ -1,4 +1,4 @@
-const CACHE_NAME = 'moneytracker-v9';
+const CACHE_NAME = 'moneytracker-v7-fix1';
 
 const CDN_LIBS = [
   'https://unpkg.com/react@18/umd/react.production.min.js',
