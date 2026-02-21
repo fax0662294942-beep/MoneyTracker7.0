@@ -2584,6 +2584,7 @@
                             setShowSQLiteImportModal={setShowSQLiteImportModal}
                             setShowManageCategoriesModal={setShowManageCategoriesModal}
                             setShowManageAccountsModal={setShowManageAccountsModal}
+                            setTransactions={setTransactions}
                         />
                     )}
 
@@ -4267,7 +4268,7 @@
             );
         }
 
-        function SettingsModal({ onClose, settings, onSave, handleFileUpload, accounts, activeAccountId, getActiveAccount, deleteAccount, setShowSQLiteImportModal, setShowManageCategoriesModal, setShowManageAccountsModal }) {
+        function SettingsModal({ onClose, settings, onSave, handleFileUpload, accounts, activeAccountId, getActiveAccount, deleteAccount, setShowSQLiteImportModal, setShowManageCategoriesModal, setShowManageAccountsModal, setTransactions }) {
             const [monthStartDay, setMonthStartDay] = useState(settings.monthStartDay);
 
             const handleSubmit = (e) => {
@@ -4522,10 +4523,14 @@
                                             const accName = getActiveAccount()?.name || 'questo account';
                                             if (window.confirm(`⚠️ Cancellare tutte le transazioni di "${accName}"?\n\nCategorie e impostazioni rimarranno invariate.`)) {
                                                 if (window.confirm(`🔴 CONFERMA\n\nElimino TUTTE le transazioni di "${accName}".\n\nProcedere?`)) {
-                                                    window.deleteTransactionsFromDB(activeAccountId).then(() => {
-                                                        onClose();
-                                                        window.location.reload();
-                                                    });
+                                                    setTransactions([]);
+                                                    setTimeout(() => {
+                                                        window.deleteTransactionsFromDB(activeAccountId).then(() => {
+                                                            onClose();
+                                                            window.location.reload();
+                                                        });
+                                                    }, 100);
+                                                }
                                                 }
                                             }
                                         }}
@@ -4562,6 +4567,8 @@
                                                 if (window.confirm(`⛔ ULTIMA CONFERMA\n\nTutto verrà eliminato e l'app tornerà alle impostazioni di fabbrica.\n\nProcedere?`)) {
                                                     // Cancella dati account attivo
                                                     const prefix = `account_${activeAccountId}_`;
+                                                    setTransactions([]);
+                                                    setTimeout(() => {
                                                     window.deleteTransactionsFromDB(activeAccountId).then(() => {
                                                     // Cancella tutti i budget per periodo
                                                     const keysToDelete = [];
@@ -4581,6 +4588,7 @@
                                                     onClose();
                                                     window.location.reload();
                                                     });
+                                                    }, 100);
                                                 }
                                             }
                                         }}
