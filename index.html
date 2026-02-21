@@ -571,6 +571,29 @@
 </head>
 <body>
     <div id="root"></div>
+    <script>
+        // Mostra qualsiasi errore JS direttamente sullo schermo
+        window.onerror = function(msg, src, line, col, err) {
+            document.getElementById('root').innerHTML =
+                '<div style="padding:20px;font-family:sans-serif;background:#fff">' +
+                '<h2 style="color:#f44336">❌ Errore JavaScript</h2>' +
+                '<p style="color:#333;word-break:break-all"><b>Messaggio:</b> ' + msg + '</p>' +
+                '<p style="color:#333"><b>File:</b> ' + src + '</p>' +
+                '<p style="color:#333"><b>Riga:</b> ' + line + ':' + col + '</p>' +
+                '<p style="color:#333"><b>Stack:</b> ' + (err && err.stack ? err.stack : 'N/A') + '</p>' +
+                '<button onclick="location.reload()" style="margin-top:15px;padding:12px 24px;background:#667eea;color:white;border:none;border-radius:8px;font-size:16px">🔄 Ricarica</button>' +
+                '</div>';
+            return false;
+        };
+        window.addEventListener('unhandledrejection', function(e) {
+            document.getElementById('root').innerHTML =
+                '<div style="padding:20px;font-family:sans-serif;background:#fff">' +
+                '<h2 style="color:#f44336">❌ Errore Promise</h2>' +
+                '<p style="color:#333;word-break:break-all">' + (e.reason ? e.reason.toString() : 'Unknown') + '</p>' +
+                '<button onclick="location.reload()" style="margin-top:15px;padding:12px 24px;background:#667eea;color:white;border:none;border-radius:8px;font-size:16px">🔄 Ricarica</button>' +
+                '</div>';
+        });
+    </script>
 
     <!-- Script normale (non Babel) per SQLite - async/await funziona nativamente -->
     <script>
