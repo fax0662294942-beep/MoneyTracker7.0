@@ -9,24 +9,40 @@
     <title>MoneyTracker 7.0 - Gestione Spese</title>
     <link rel="manifest" href="manifest.json">
     <script>
-      // Debug rapido: se le librerie CDN non caricano, evita "schermata bianca" mostrando un messaggio.
-      window.addEventListener('load', function () {
-        setTimeout(function () {
-          var missing = [];
-          if (!window.React) missing.push('React');
-          if (!window.ReactDOM) missing.push('ReactDOM');
-          if (!window.Babel) missing.push('Babel');
-          if (missing.length) {
-            document.getElementById('root').innerHTML =
-              '<div style="padding:24px;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:680px;margin:0 auto">' +
-              '<h2 style="color:#f44336;margin:0 0 10px 0">❌ Librerie non caricate</h2>' +
-              '<p style="color:#555;margin:0 0 12px 0">Mancano: <b>' + missing.join(', ') + '</b>.</p>' +
-              '<p style="color:#777;margin:0">Probabile blocco/errore CDN o cache. Prova a: 1) chiudere e riaprire, 2) aprire in incognito, 3) cambiare rete (Wi‑Fi/dati).</p>' +
-              '</div>';
-          }
-        }, 1500);
-      });
-    </script>
+/* Debug rapido: non aspetta window.load (che può restare bloccato se un CDN "appende").
+   Mostra un messaggio se dopo 5s mancano React/ReactDOM/Babel. */
+(function () {
+  function showMissing(missing) {
+    var root = document.getElementById('root');
+    if (!root) return;
+    root.innerHTML =
+      '<div style="padding:24px;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:680px;margin:0 auto">' +
+      '<h2 style="color:#f44336;margin:0 0 10px 0">❌ Librerie non caricate</h2>' +
+      '<p style="color:#555;margin:0 0 12px 0">Mancano: <b>' + missing.join(', ') + '</b>.</p>' +
+      '<p style="color:#777;margin:0">Possibile blocco rete/CDN. Prova: 1) cambia rete (Wi‑Fi/dati), 2) apri in incognito, 3) svuota cache sito.</p>' +
+      '</div>';
+  }
+
+  function check() {
+    var missing = [];
+    if (!window.React) missing.push('React');
+    if (!window.ReactDOM) missing.push('ReactDOM');
+    if (!window.Babel) missing.push('Babel');
+    if (missing.length) showMissing(missing);
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    // primo check dopo 5s, poi ogni 10s (max 3 volte)
+    var tries = 0;
+    var t = setInterval(function () {
+      tries++;
+      if (window.React && window.ReactDOM && window.Babel) { clearInterval(t); return; }
+      check();
+      if (tries >= 3) clearInterval(t);
+    }, 5000);
+  });
+})();
+</script>
 
     <script>
         // Registra Service Worker per funzionamento offline
@@ -38,11 +54,11 @@
             });
         }
     </script>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js';"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js';"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js';"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/sql.js@1.8.0/dist/sql-wasm.js';"></script>
+    <script defer crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js';"></script>
+    <script defer crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js';"></script>
+    <script defer src="https://unpkg.com/@babel/standalone/babel.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js';"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/sql.js@1.8.0/dist/sql-wasm.js';"></script>
     <style>
         * {
             margin: 0;
@@ -588,7 +604,7 @@
     </style>
 </head>
 <body>
-    <div id="root"></div>
+    <div id="root"><div style="padding:24px;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#555">⏳ Caricamento MoneyTracker…</div></div>
 
     <!-- Script normale (non Babel) per SQLite - async/await funziona nativamente -->
     <script>
