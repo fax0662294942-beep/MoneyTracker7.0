@@ -8,41 +8,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>MoneyTracker 7.0 - Gestione Spese</title>
     <link rel="manifest" href="manifest.json">
-    <script>
-/* Debug rapido: non aspetta window.load (che può restare bloccato se un CDN "appende").
-   Mostra un messaggio se dopo 5s mancano React/ReactDOM/Babel. */
-(function () {
-  function showMissing(missing) {
-    var root = document.getElementById('root');
-    if (!root) return;
-    root.innerHTML =
-      '<div style="padding:24px;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:680px;margin:0 auto">' +
-      '<h2 style="color:#f44336;margin:0 0 10px 0">❌ Librerie non caricate</h2>' +
-      '<p style="color:#555;margin:0 0 12px 0">Mancano: <b>' + missing.join(', ') + '</b>.</p>' +
-      '<p style="color:#777;margin:0">Possibile blocco rete/CDN. Prova: 1) cambia rete (Wi‑Fi/dati), 2) apri in incognito, 3) svuota cache sito.</p>' +
-      '</div>';
-  }
-
-  function check() {
-    var missing = [];
-    if (!window.React) missing.push('React');
-    if (!window.ReactDOM) missing.push('ReactDOM');
-    if (!window.Babel) missing.push('Babel');
-    if (missing.length) showMissing(missing);
-  }
-
-  document.addEventListener('DOMContentLoaded', function () {
-    // primo check dopo 5s, poi ogni 10s (max 3 volte)
-    var tries = 0;
-    var t = setInterval(function () {
-      tries++;
-      if (window.React && window.ReactDOM && window.Babel) { clearInterval(t); return; }
-      check();
-      if (tries >= 3) clearInterval(t);
-    }, 5000);
-  });
-})();
-</script>
+    
 
     <script>
         // Registra Service Worker per funzionamento offline
@@ -604,7 +570,7 @@
     </style>
 </head>
 <body>
-    <div id="root"><div style="padding:24px;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#555">⏳ Caricamento MoneyTracker…</div></div>
+    <div id="root"></div>
 
     <!-- Script normale (non Babel) per SQLite - async/await funziona nativamente -->
     <script>
