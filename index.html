@@ -1,44 +1,6 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-<script>
-(function(){
-  function panel(){
-    var pre=document.getElementById("mt-debug");
-    if(!pre){
-      pre=document.createElement("pre");
-      pre.id="mt-debug";
-      pre.style.cssText="position:fixed;inset:0;z-index:999999;background:#111;color:#0f0;padding:12px;white-space:pre-wrap;overflow:auto;font-size:12px;";
-      document.documentElement.appendChild(pre);
-    }
-    return pre;
-  }
-  function show(msg){
-    panel().textContent += msg + "\n";
-  }
-  window.addEventListener("error", function(e){
-    show("❌ ERROR: " + (e.message || e.error));
-    if(e.filename) show("File: " + e.filename + ":" + e.lineno + ":" + e.colno);
-    if(e.error && e.error.stack) show("Stack:\n" + e.error.stack);
-  });
-  window.addEventListener("unhandledrejection", function(e){
-    show("❌ PROMISE: " + (e.reason && e.reason.message ? e.reason.message : String(e.reason)));
-    if(e.reason && e.reason.stack) show("Stack:\n" + e.reason.stack);
-  });
-  document.addEventListener("DOMContentLoaded", function(){
-    show("✅ Debug attivo. DOMContentLoaded.");
-    // basic library presence after a short delay
-    setTimeout(function(){
-      var missing=[];
-      if(!window.React) missing.push("React");
-      if(!window.ReactDOM) missing.push("ReactDOM");
-      if(!window.Babel) missing.push("Babel");
-      if(missing.length) show("⏱️ Timeout: librerie mancanti: " + missing.join(", "));
-    }, 6000);
-  });
-})();
-</script>
-
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#667eea">
@@ -60,9 +22,9 @@
     </script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js';"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js';"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js';" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/sql.js@1.8.0/dist/sql-wasm.js';" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js';"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/sql.js@1.8.0/dist/sql-wasm.js';"></script>
     <style>
         * {
             margin: 0;
@@ -4660,7 +4622,6 @@
                                                     }, 100);
                                                 }
                                                 }
-                                            }
                                         }}
                                         style={{
                                             width: '100%',
