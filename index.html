@@ -1718,6 +1718,12 @@
                 const file = event.target.files[0];
                 if (!file) return;
                 
+                // Conferma import (non cancella i dati esistenti: aggiunge e/o crea categorie/conti mancanti)
+                if (!window.confirm("Import CSV 1Money:\n\n• Verranno importate le transazioni del file\n• Verranno create categorie/conti mancanti\n• I dati esistenti NON verranno cancellati\n\nContinuare?")) {
+                    event.target.value = "";
+                    return;
+                }
+                
                 const reader = new FileReader();
                 reader.onload = async (e) => {
                     const result = await import1MoneyCSV(e.target.result);
@@ -2420,13 +2426,13 @@
                                     </button>
                                     {transfersOnlyFilter && (
                                         <span style={{ fontSize: '12px', color: '#666' }}>
-                                            {filteredTransactions.filter(t => t.isTransfer).length} trasferimenti
+                                            {((viewMode === "all") ? filteredTransactions : periodTransactions).filter(t => t.isTransfer).length} trasferimenti
                                         </span>
                                     )}
                                 </div>
                                 
                                 {(() => {
-                                    let displayTransactions = filteredTransactions;
+                                    let displayTransactions = (viewMode === "all") ? filteredTransactions : periodTransactions;
                                     if (categoryFilter) displayTransactions = displayTransactions.filter(t => t.category === categoryFilter);
                                     if (transfersOnlyFilter) displayTransactions = displayTransactions.filter(t => t.isTransfer);
                                     
