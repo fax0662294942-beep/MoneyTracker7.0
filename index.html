@@ -1027,10 +1027,7 @@
             const [categoryFilter, setCategoryFilter] = useState(null); // per filtrare transazioni
             const [activeTab, setActiveTab] = useState('transactions');
             const [currentPage, setCurrentPage] = useState('categories');
-            
-            // Vista grafico categorie: 'expense' (uscite) o 'income' (entrate)
-            const [categoryStatsMode, setCategoryStatsMode] = useState('expense');
-const chartRef = useRef(null);
+            const chartRef = useRef(null);
             const chartInstance = useRef(null);
             const trendChartRef = useRef(null);
             const trendChartInstance = useRef(null);
@@ -1372,40 +1369,6 @@ const chartRef = useRef(null);
                 
                 return expenses;
             };
-
-            const getMonthlyIncomeByCategory = () => {
-                const monthlyTransactions = getCurrentMonthTransactions();
-                const income = {};
-
-                monthlyTransactions
-                    .filter(t => t.type === 'income')
-                    .forEach(t => {
-                        if (!income[t.category]) {
-                            income[t.category] = 0;
-                        }
-                        income[t.category] += t.amount;
-                    });
-
-                return income;
-            };
-
-
-            const getMonthlyIncomeByCategory = () => {
-                const monthlyTransactions = getCurrentMonthTransactions();
-                const income = {};
-
-                monthlyTransactions
-                    .filter(t => t.type === 'income')
-                    .forEach(t => {
-                        if (!income[t.category]) {
-                            income[t.category] = 0;
-                        }
-                        income[t.category] += t.amount;
-                    });
-
-                return income;
-            };
-
 
             const addTransaction = (transaction) => {
                 setTransactions([transaction, ...transactions]);
@@ -1755,6 +1718,12 @@ const chartRef = useRef(null);
                 const file = event.target.files[0];
                 if (!file) return;
                 
+                // Conferma import (non cancella i dati esistenti: aggiunge e/o crea categorie/conti mancanti)
+                if (!window.confirm("Import CSV 1Money:\n\n• Verranno importate le transazioni del file\n• Verranno create categorie/conti mancanti\n• I dati esistenti NON verranno cancellati\n\nContinuare?")) {
+                    event.target.value = "";
+                    return;
+                }
+                
                 const reader = new FileReader();
                 reader.onload = async (e) => {
                     const result = await import1MoneyCSV(e.target.result);
@@ -1901,7 +1870,7 @@ const chartRef = useRef(null);
                 // Aggiorna la categoria nelle impostazioni personalizzate
                 const customCategories = JSON.parse(localStorage.getItem('customCategories') || '{}');
                 customCategories[categoryId] = {
-                    ...(( [...getCategoriesFromStorage().expense, ...getCategoriesFromStorage().income].find(c => c.id === categoryId) ) || {}),
+                    ...getCategoriesFromStorage().expense.find(c => c.id === categoryId),
                     ...customData,
                     ...newData
                 };
@@ -1947,18 +1916,16 @@ const chartRef = useRef(null);
                         chartInstance.current.destroy();
                     }
 
-                    const byCategory = (viewType === 'income') ? incomeByCategory : expenses;
+                    const expensesByCategory = getMonthlyExpensesByCategory();
 
-                    const catList = getCategoriesFromStorage()[viewType === 'income' ? 'income' : 'expense'];
-
-                    const labels = Object.keys(byCategory).map(catId => {
-                        const cat = catList.find(c => c.id === catId);
+                    const labels = Object.keys(expensesByCategory).map(catId => {
+                        const cat = getCategoriesFromStorage().expense.find(c => c.id === catId);
                         return cat ? cat.name : catId;
                     });
 
-                    const data = Object.values(byCategory);
-                    const colors = Object.keys(byCategory).map(catId => {
-                        const cat = catList.find(c => c.id === catId);
+                    const data = Object.values(expensesByCategory);
+                    const colors = Object.keys(expensesByCategory).map(catId => {
+                        const cat = getCategoriesFromStorage().expense.find(c => c.id === catId);
                         return cat ? cat.color : '#999';
                     });
 
@@ -1985,7 +1952,7 @@ const chartRef = useRef(null);
                         });
                     }
                 }
-            }, [currentPage, filteredTransactions, selectedAccount, settings.monthStartDay, viewMode, periodOffset, viewType, cats]);
+            }, [currentPage, filteredTransactions, selectedAccount, settings.monthStartDay, viewMode, periodOffset]);
 
             // Grafico centrale categorie (stile 1Money)
             useEffect(() => {
@@ -2001,17 +1968,16 @@ const chartRef = useRef(null);
                             window.categoryChartInstance.destroy();
                         }
 
-                        const byCategory = (viewType === 'income') ? incomeByCategory : expenses;
-                        const catList = (viewType === 'income') ? cats.income : cats.expense;
+                        const expensesByCategory = getMonthlyExpensesByCategory();
 
-                        const labels = Object.keys(byCategory).map(catId => {
-                            const cat = catList.find(c => c.id === catId);
+                        const labels = Object.keys(expensesByCategory).map(catId => {
+                            const cat = getCategoriesFromStorage().expense.find(c => c.id === catId);
                             return cat ? cat.name : catId;
                         });
 
-                        const data = Object.values(byCategory);
-                        const colors = Object.keys(byCategory).map(catId => {
-                            const cat = catList.find(c => c.id === catId);
+                        const data = Object.values(expensesByCategory);
+                        const colors = Object.keys(expensesByCategory).map(catId => {
+                            const cat = getCategoriesFromStorage().expense.find(c => c.id === catId);
                             return cat ? cat.color : '#999';
                         });
 
@@ -2338,11 +2304,11 @@ const chartRef = useRef(null);
                         <div className="balance-label">Saldo {formatPeriodDisplay()}</div>
                         <div className="balance-amount">€ {balance.toFixed(2)}</div>
                         <div className="stats-row" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
-                            <div className="stat-box income" style={{ cursor: 'pointer' }} onClick={() => setCategoryStatsMode('income')}>
+                            <div className="stat-box income">
                                 <div className="stat-label">Entrate</div>
                                 <div className="stat-value income">€ {totalIncome.toFixed(2)}</div>
                             </div>
-                            <div className="stat-box expense" style={{ cursor: 'pointer' }} onClick={() => setCategoryStatsMode('expense')}>
+                            <div className="stat-box expense">
                                 <div className="stat-label">Uscite</div>
                                 <div className="stat-value expense">€ {totalExpense.toFixed(2)}</div>
                             </div>
@@ -2376,12 +2342,8 @@ const chartRef = useRef(null);
                     {currentPage === 'categories' && (
                         <CategoriesView 
                             expenses={getMonthlyExpensesByCategory()}
-                            incomeByCategory={getMonthlyIncomeByCategory()}
                             budgets={budgets}
                             onCategoryClick={handleCategoryClick}
-                            viewType={categoryStatsMode}
-                            totalIncome={totalIncome}
-                            totalExpense={totalExpense}
                         />
                     )}
 
@@ -2418,10 +2380,10 @@ const chartRef = useRef(null);
                                     }}>
                                         <div>
                                             <span style={{ fontSize: '18px', marginRight: '8px' }}>
-                                                {([ ...getCategoriesFromStorage().expense, ...getCategoriesFromStorage().income ].find(c => c.id === categoryFilter))?.icon}
+                                                {getCategoriesFromStorage().expense.find(c => c.id === categoryFilter)?.icon}
                                             </span>
                                             <span style={{ fontWeight: 'bold' }}>
-                                                Filtro: {([ ...getCategoriesFromStorage().expense, ...getCategoriesFromStorage().income ].find(c => c.id === categoryFilter))?.name}
+                                                Filtro: {getCategoriesFromStorage().expense.find(c => c.id === categoryFilter)?.name}
                                             </span>
                                         </div>
                                         <button
@@ -2464,13 +2426,13 @@ const chartRef = useRef(null);
                                     </button>
                                     {transfersOnlyFilter && (
                                         <span style={{ fontSize: '12px', color: '#666' }}>
-                                            {filteredTransactions.filter(t => t.isTransfer).length} trasferimenti
+                                            {((viewMode === "all") ? filteredTransactions : periodTransactions).filter(t => t.isTransfer).length} trasferimenti
                                         </span>
                                     )}
                                 </div>
                                 
                                 {(() => {
-                                    let displayTransactions = filteredTransactions;
+                                    let displayTransactions = (viewMode === "all") ? filteredTransactions : periodTransactions;
                                     if (categoryFilter) displayTransactions = displayTransactions.filter(t => t.category === categoryFilter);
                                     if (transfersOnlyFilter) displayTransactions = displayTransactions.filter(t => t.isTransfer);
                                     
@@ -2591,7 +2553,7 @@ const chartRef = useRef(null);
 
                     {showEditCategoryModal && (
                         <EditCategoryModal
-                            category={[ ...getCategoriesFromStorage().expense, ...getCategoriesFromStorage().income ].find(c => c.id === showEditCategoryModal)}
+                            category={getCategoriesFromStorage().expense.find(c => c.id === showEditCategoryModal)}
                             onClose={() => setShowEditCategoryModal(null)}
                             onSave={(newData) => updateCategory(showEditCategoryModal, newData)}
                         />
@@ -3394,7 +3356,7 @@ const chartRef = useRef(null);
             );
         }
 
-        function CategoriesView({ expenses, incomeByCategory, budgets, onCategoryClick, viewType, totalIncome, totalExpense }) {
+        function CategoriesView({ expenses, budgets, onCategoryClick }) {
             const [categoryOrder, setCategoryOrder] = React.useState([]);
             const [draggedItem, setDraggedItem] = React.useState(null);
             const [dragOverItem, setDragOverItem] = React.useState(null);
@@ -3408,39 +3370,26 @@ const chartRef = useRef(null);
             }, []);
 
             React.useEffect(() => {
-                const key = viewType === 'income' ? 'categoryOrder_income' : 'categoryOrder';
-                const base = (viewType === 'income' ? cats.income : cats.expense).map(c => c.id);
-                const savedOrder = localStorage.getItem(key);
+                const savedOrder = localStorage.getItem('categoryOrder');
                 if (savedOrder) {
-                    try {
-                        const parsed = JSON.parse(savedOrder);
-                        // Usa solo gli id che esistono ancora
-                        const filtered = parsed.filter(id => base.includes(id));
-                        // Aggiungi eventuali nuovi id in coda
-                        const merged = [...filtered, ...base.filter(id => !filtered.includes(id))];
-                        setCategoryOrder(merged);
-                    } catch (e) {
-                        setCategoryOrder(base);
-                    }
+                    setCategoryOrder(JSON.parse(savedOrder));
                 } else {
-                    setCategoryOrder(base);
+                    setCategoryOrder(cats.expense.map(c => c.id));
                 }
-            }, [viewType, cats]);
+            }, []);
 
             React.useEffect(() => {
                 if (categoryOrder.length > 0) {
-                    localStorage.setItem(viewType === 'income' ? 'categoryOrder_income' : 'categoryOrder', JSON.stringify(categoryOrder));
+                    localStorage.setItem('categoryOrder', JSON.stringify(categoryOrder));
                 }
             }, [categoryOrder]);
 
-            const monthlyByCategory = (viewType === 'income') ? incomeByCategory : expenses;
-            const modeAmount = (viewType === 'income') ? totalIncome : totalExpense;
-            const otherAmount = (viewType === 'income') ? totalExpense : totalIncome;
+            const monthlyExpenses = expenses;
+            const totalExpense = Object.values(monthlyExpenses).reduce((acc, val) => acc + val, 0);
             const totalBudget = Object.values(budgets).reduce((acc, val) => acc + val, 0);
 
-            const baseCats = (viewType === 'income') ? cats.income : cats.expense;
-            const activeCats = baseCats.filter(c => !c.archived);
-            const archivedCats = baseCats.filter(c => c.archived);
+            const activeCats = cats.expense.filter(c => !c.archived);
+            const archivedCats = cats.expense.filter(c => c.archived);
 
             // Ordina le categorie attive
             const orderedCategories = categoryOrder
@@ -3520,20 +3469,16 @@ const chartRef = useRef(null);
                     <div className="chart-center-container">
                         <canvas id="categoryChart" style={{ maxHeight: '280px' }}></canvas>
                         <div className="chart-center-info">
-                            <div className="chart-center-label">{viewType === 'income' ? 'Entrate' : 'Uscite'}</div>
-                            <div className="chart-center-amount" style={{ color: viewType === 'income' ? '#4CAF50' : '#f44336' }}>
-                                {modeAmount.toFixed(2)} €
-                            </div>
-                            <div className="chart-center-budget" style={{ color: viewType === 'income' ? '#f44336' : '#4CAF50' }}>
-                                {viewType === 'income' ? `Uscite ${otherAmount.toFixed(2)} €` : `Entrate ${otherAmount.toFixed(2)} €`}
-                            </div>
+                            <div className="chart-center-label">Spese</div>
+                            <div className="chart-center-amount">{totalExpense.toFixed(2)} €</div>
+                            <div className="chart-center-budget">{totalBudget.toFixed(0)} €</div>
                         </div>
                     </div>
 
                     {/* Categorie attive */}
                     <div className="categories-grid">
                         {orderedCategories.map(category => {
-                            const amount = monthlyByCategory[category.id] || 0;
+                            const amount = monthlyExpenses[category.id] || 0;
                             const budget = budgets[category.id] || 0;
                             const exceeded = budget > 0 && amount > budget;
                             const remaining = budget - amount;
