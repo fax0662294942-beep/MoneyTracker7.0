@@ -4522,10 +4522,10 @@
                                             const accName = getActiveAccount()?.name || 'questo account';
                                             if (window.confirm(`⚠️ Cancellare tutte le transazioni di "${accName}"?\n\nCategorie e impostazioni rimarranno invariate.`)) {
                                                 if (window.confirm(`🔴 CONFERMA\n\nElimino TUTTE le transazioni di "${accName}".\n\nProcedere?`)) {
-                                                    const prefix = `account_${activeAccountId}_`;
-                                                    window.deleteTransactionsFromDB(activeAccountId);
-                                                    onClose();
-                                                    window.location.reload();
+                                                    window.deleteTransactionsFromDB(activeAccountId).then(() => {
+                                                        onClose();
+                                                        window.location.reload();
+                                                    });
                                                 }
                                             }
                                         }}
@@ -4562,7 +4562,7 @@
                                                 if (window.confirm(`⛔ ULTIMA CONFERMA\n\nTutto verrà eliminato e l'app tornerà alle impostazioni di fabbrica.\n\nProcedere?`)) {
                                                     // Cancella dati account attivo
                                                     const prefix = `account_${activeAccountId}_`;
-                                                    window.deleteTransactionsFromDB(activeAccountId);
+                                                    window.deleteTransactionsFromDB(activeAccountId).then(() => {
                                                     // Cancella tutti i budget per periodo
                                                     const keysToDelete = [];
                                                     for (let i = 0; i < localStorage.length; i++) {
@@ -4580,6 +4580,7 @@
                                                     localStorage.removeItem('categoryOrder');
                                                     onClose();
                                                     window.location.reload();
+                                                    });
                                                 }
                                             }
                                         }}
