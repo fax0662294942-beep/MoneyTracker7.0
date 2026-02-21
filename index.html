@@ -3,13 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#667eea">
+    <meta name="theme-color" content="#4CAF50">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>MoneyTracker 7.0 - Gestione Spese</title>
+    <title>MoneyTracker 6.0 - Gestione Spese</title>
     <link rel="manifest" href="manifest.json">
-    
-
     <script>
         // Registra Service Worker per funzionamento offline
         if ('serviceWorker' in navigator) {
@@ -20,11 +18,11 @@
             });
         }
     </script>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js';"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js';"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js';"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/sql.js@1.8.0/dist/sql-wasm.js';"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
     <style>
         * {
             margin: 0;
@@ -571,29 +569,6 @@
 </head>
 <body>
     <div id="root"></div>
-    <script>
-        // Mostra qualsiasi errore JS direttamente sullo schermo
-        window.onerror = function(msg, src, line, col, err) {
-            document.getElementById('root').innerHTML =
-                '<div style="padding:20px;font-family:sans-serif;background:#fff">' +
-                '<h2 style="color:#f44336">❌ Errore JavaScript</h2>' +
-                '<p style="color:#333;word-break:break-all"><b>Messaggio:</b> ' + msg + '</p>' +
-                '<p style="color:#333"><b>File:</b> ' + src + '</p>' +
-                '<p style="color:#333"><b>Riga:</b> ' + line + ':' + col + '</p>' +
-                '<p style="color:#333"><b>Stack:</b> ' + (err && err.stack ? err.stack : 'N/A') + '</p>' +
-                '<button onclick="location.reload()" style="margin-top:15px;padding:12px 24px;background:#667eea;color:white;border:none;border-radius:8px;font-size:16px">🔄 Ricarica</button>' +
-                '</div>';
-            return false;
-        };
-        window.addEventListener('unhandledrejection', function(e) {
-            document.getElementById('root').innerHTML =
-                '<div style="padding:20px;font-family:sans-serif;background:#fff">' +
-                '<h2 style="color:#f44336">❌ Errore Promise</h2>' +
-                '<p style="color:#333;word-break:break-all">' + (e.reason ? e.reason.toString() : 'Unknown') + '</p>' +
-                '<button onclick="location.reload()" style="margin-top:15px;padding:12px 24px;background:#667eea;color:white;border:none;border-radius:8px;font-size:16px">🔄 Ricarica</button>' +
-                '</div>';
-        });
-    </script>
 
     <!-- Script normale (non Babel) per SQLite - async/await funziona nativamente -->
     <script>
@@ -643,15 +618,35 @@
             var tables = window.queryDB(db, "SELECT name FROM sqlite_master WHERE type='table'");
             console.log('Tabelle trovate:', tables.map(function(t) { return t.name; }));
 
-            var rawCategories = window.queryDB(db, "SELECT * FROM de");
+            // Risolvi i nomi reali delle tabelle (alcuni backup usano suffissi o maiuscole)
+            function resolveTableName(tables, base) {
+                var baseLc = String(base).toLowerCase();
+                var names = (tables || []).map(function(t){ return t && t.name ? t.name : t; }).filter(Boolean);
+                // match esatto case-insensitive
+                var exact = names.find(function(n){ return String(n).toLowerCase() === baseLc; });
+                if (exact) return exact;
+                // match prefisso (es. de1, de_2024)
+                var pref = names.find(function(n){ return String(n).toLowerCase().startsWith(baseLc); });
+                if (pref) return pref;
+                // match contiene
+                var cont = names.find(function(n){ return String(n).toLowerCase().includes(baseLc); });
+                return cont || base;
+            }
+
+            var tableDE = resolveTableName(tables, 'de');
+            var tableTA = resolveTableName(tables, 'ta');
+            var tableTR = resolveTableName(tables, 'tr');
+            console.log('Tabelle risolte:', { de: tableDE, ta: tableTA, tr: tableTR });
+
+            var rawCategories = window.queryDB(db, "SELECT * FROM \"" + tableDE + "\"");
             console.log('Categorie trovate:', rawCategories.length);
             if (rawCategories.length > 0) console.log('Colonne DE:', Object.keys(rawCategories[0]));
 
-            var rawAccounts = window.queryDB(db, "SELECT * FROM ta");
+            var rawAccounts = window.queryDB(db, "SELECT * FROM \"" + tableTA + "\"");
             console.log('Conti trovati:', rawAccounts.length);
             if (rawAccounts.length > 0) console.log('Colonne TA:', Object.keys(rawAccounts[0]));
 
-            var rawTransactions = window.queryDB(db, "SELECT * FROM tr");
+            var rawTransactions = window.queryDB(db, "SELECT * FROM \"" + tableTR + "\"");
             console.log('Transazioni trovate:', rawTransactions.length);
             if (rawTransactions.length > 0) console.log('Colonne TR:', Object.keys(rawTransactions[0]));
 
@@ -764,14 +759,13 @@
         window.MT_DB_CALLBACKS = [];
 
         function openMTDatabase() {
-            var req = indexedDB.open('MoneyTracker6', 2);
+            var req = indexedDB.open('MoneyTracker6', 1);
             req.onupgradeneeded = function(e) {
                 var db = e.target.result;
-                if (db.objectStoreNames.contains('transactions')) {
-                    db.deleteObjectStore('transactions');
+                if (!db.objectStoreNames.contains('transactions')) {
+                    var store = db.createObjectStore('transactions', { keyPath: 'id' });
+                    store.createIndex('account', 'account', { unique: false });
                 }
-                var store = db.createObjectStore('transactions', { keyPath: 'id' });
-                store.createIndex('ledger', 'ledger', { unique: false });
             };
             req.onsuccess = function(e) {
                 window.MT_DB = e.target.result;
@@ -792,68 +786,59 @@
         }
 
         // Salva array transazioni per un account
-        window.saveTransactionsToDB = function(ledgerId, transactions) {
-            return new Promise(function(resolve, reject) {
-                onDBReady(function() {
-                    try {
-                        var db = window.MT_DB;
-                        var tx = db.transaction('transactions', 'readwrite');
-                        var store = tx.objectStore('transactions');
-
-                        // Cancella vecchie transazioni di questo ledger
-                        var idx = store.index('ledger');
-                        var req = idx.openCursor(IDBKeyRange.only(ledgerId));
-                        var toDelete = [];
-                        req.onsuccess = function(e) {
-                            var cursor = e.target.result;
-                            if (cursor) { toDelete.push(cursor.primaryKey); cursor.continue(); }
-                            else {
-                                toDelete.forEach(function(k) { store.delete(k); });
-                                // Inserisci nuove
-                                transactions.forEach(function(t) {
-                                    var obj = Object.assign({}, t);
-                                    obj.ledger = ledgerId; // ✅ non sovrascrive obj.account (conto di pagamento)
-                                    store.put(obj);
-                                });
-                            }
-                        };
-                        tx.oncomplete = function() { resolve(); };
-                        tx.onerror = function(e) { reject(e.target.error); };
-                    } catch(err) {
-                        reject(err);
-                    }
-                });
-            });
-        };
-
-        // Carica transazioni per un ledger/account principale
-        window.loadTransactionsFromDB = function(ledgerId) {
-            return new Promise(function(resolve, reject) {
-                onDBReady(function() {
-                    try {
-                        var db = window.MT_DB;
-                        var tx = db.transaction('transactions', 'readonly');
-                        var store = tx.objectStore('transactions');
-                        var idx = store.index('ledger');
-                        var req = idx.getAll(IDBKeyRange.only(ledgerId));
-                        req.onsuccess = function() { resolve(req.result || []); };
-                        req.onerror = function(e) { reject(e.target.error); };
-                    } catch(err) {
-                        reject(err);
-                    }
-                });
-            });
-        };
-
-        // Cancella tutte le transazioni di un account
-        window.deleteTransactionsFromDB = function(ledgerId) {
+        window.saveTransactionsToDB = function(accountId, transactions) {
             return new Promise(function(resolve, reject) {
                 onDBReady(function() {
                     var db = window.MT_DB;
                     var tx = db.transaction('transactions', 'readwrite');
                     var store = tx.objectStore('transactions');
-                    var idx = store.index('ledger');
-                    var req = idx.openCursor(IDBKeyRange.only(ledgerId));
+                    // Prima cancella vecchie transazioni di questo account
+                    var idx = store.index('account');
+                    var req = idx.openCursor(IDBKeyRange.only(accountId));
+                    var toDelete = [];
+                    req.onsuccess = function(e) {
+                        var cursor = e.target.result;
+                        if (cursor) { toDelete.push(cursor.primaryKey); cursor.continue(); }
+                        else {
+                            toDelete.forEach(function(k) { store.delete(k); });
+                            // Poi inserisci nuove
+                            transactions.forEach(function(t) {
+                                var obj = Object.assign({}, t);
+                                obj.account = accountId;
+                                store.put(obj);
+                            });
+                        }
+                    };
+                    tx.oncomplete = function() { resolve(); };
+                    tx.onerror = function(e) { reject(e.target.error); };
+                });
+            });
+        };
+
+        // Carica transazioni per un account
+        window.loadTransactionsFromDB = function(accountId) {
+            return new Promise(function(resolve, reject) {
+                onDBReady(function() {
+                    var db = window.MT_DB;
+                    var tx = db.transaction('transactions', 'readonly');
+                    var store = tx.objectStore('transactions');
+                    var idx = store.index('account');
+                    var req = idx.getAll(IDBKeyRange.only(accountId));
+                    req.onsuccess = function(e) { resolve(e.target.result || []); };
+                    req.onerror = function(e) { reject(e.target.error); };
+                });
+            });
+        };
+
+        // Cancella tutte le transazioni di un account
+        window.deleteTransactionsFromDB = function(accountId) {
+            return new Promise(function(resolve, reject) {
+                onDBReady(function() {
+                    var db = window.MT_DB;
+                    var tx = db.transaction('transactions', 'readwrite');
+                    var store = tx.objectStore('transactions');
+                    var idx = store.index('account');
+                    var req = idx.openCursor(IDBKeyRange.only(accountId));
                     req.onsuccess = function(e) {
                         var cursor = e.target.result;
                         if (cursor) { cursor.delete(); cursor.continue(); }
@@ -870,8 +855,32 @@
 
         // ============ CATEGORIE E CONTI BASE (DEFAULT) ============
         const DEFAULT_CATEGORIES = {
-            expense: [],
-            income: []
+            expense: [
+                { id: 'food', name: 'Spesa', icon: '🛒', color: '#FF6B6B' },
+                { id: 'restaurant', name: 'Ristoranti', icon: '🍕', color: '#FF8E8E' },
+                { id: 'transport', name: 'Trasporti', icon: '🚗', color: '#4ECDC4' },
+                { id: 'fuel', name: 'Carburante', icon: '⛽', color: '#5ED5D5' },
+                { id: 'bills', name: 'Bollette', icon: '💡', color: '#4DA6FF' },
+                { id: 'rent', name: 'Affitto', icon: '🏠', color: '#3D8BFF' },
+                { id: 'shopping', name: 'Shopping', icon: '🛍️', color: '#95E1D3' },
+                { id: 'health', name: 'Salute', icon: '⚕️', color: '#AA96DA' },
+                { id: 'entertainment', name: 'Svago', icon: '🎬', color: '#FCBAD3' },
+                { id: 'travel', name: 'Viaggi', icon: '✈️', color: '#FFD93D' },
+                { id: 'vacation', name: 'Vacanze', icon: '🏖️', color: '#FFF176' },
+                { id: 'education', name: 'Istruzione', icon: '📚', color: '#A8D8EA' },
+                { id: 'work', name: 'Per Lavoro', icon: '💼', color: '#8D6E63' },
+                { id: 'family', name: 'Famiglia', icon: '👨‍👩‍👧', color: '#CE93D8' },
+                { id: 'personal', name: 'Spese Personali', icon: '😊', color: '#FFB74D' },
+                { id: 'other', name: 'Altro', icon: '📦', color: '#B0BEC5' }
+            ],
+            income: [
+                { id: 'salary', name: 'Stipendio', icon: '💼', color: '#6BCF7F' },
+                { id: 'freelance', name: 'Freelance', icon: '💻', color: '#4CAF50' },
+                { id: 'investment', name: 'Investimenti', icon: '📈', color: '#8BC34A' },
+                { id: 'refund', name: 'Rimborsi', icon: '💳', color: '#9CCC65' },
+                { id: 'gift', name: 'Regalo', icon: '🎁', color: '#AED581' },
+                { id: 'other', name: 'Altro', icon: '💰', color: '#C5E1A5' }
+            ]
         };
 
         // Funzioni per gestire categorie e conti dinamici
@@ -1081,7 +1090,7 @@
                                 if (oldTxs.length > 0) {
                                     // Migra da localStorage a IndexedDB
                                     window.saveTransactionsToDB(activeAccountId, oldTxs).then(() => {
-                                        localStorage.removeItem(prefix + 'transactions');
+                                        window.deleteTransactionsFromDB(activeAccountId);
                                         setTransactions(oldTxs);
                                     });
                                     return;
@@ -1241,24 +1250,6 @@
 
             // Totali basati sul periodo selezionato (non su tutte le transazioni)
             const periodTransactions = getCurrentMonthTransactions();
-            const getVisibleTransactions = () => {
-                let tx = getCurrentMonthTransactions();
-
-                if (selectedAccount !== 'all') {
-                    tx = tx.filter(t => t.account === selectedAccount);
-                }
-
-                if (categoryFilter) {
-                    tx = tx.filter(t => t.category === categoryFilter);
-                }
-
-                if (transfersOnlyFilter) {
-                    tx = tx.filter(t => t.isTransfer);
-                }
-
-                return tx;
-            };
-
             const totalIncome = periodTransactions
                 .filter(t => t.type === 'income')
                 .reduce((acc, t) => acc + t.amount, 0);
@@ -1515,33 +1506,10 @@
             };
 
             // IMPORT DA 1MONEY CSV - versione completa senza perdita dati
-            const import1MoneyCSV = (csvText) => {
+            const import1MoneyCSV = async (csvText) => {
                 try {
-                    // Rimuovi BOM se presente
-                    const text = csvText.replace(/^\uFEFF/, '');
-                    const lines = text.split('\n').filter(line => line.trim());
+                    const lines = csvText.split('\n').filter(line => line.trim());
                     if (lines.length < 2) throw new Error('File CSV vuoto o non valido');
-
-                    // Parse CSV robusto
-                    const parseLine = (raw) => {
-                        const fields = [];
-                        let current = '';
-                        let inQuotes = false;
-                        for (let j = 0; j < raw.length; j++) {
-                            const ch = raw[j];
-                            if (ch === '"') {
-                                if (inQuotes && raw[j+1] === '"') { current += '"'; j++; }
-                                else inQuotes = !inQuotes;
-                            } else if (ch === ',' && !inQuotes) {
-                                fields.push(current.trim());
-                                current = '';
-                            } else {
-                                current += ch;
-                            }
-                        }
-                        fields.push(current.trim());
-                        return fields;
-                    };
 
                     // Leggi categorie e conti esistenti
                     const existingCats = getCategoriesFromStorage();
@@ -1550,84 +1518,28 @@
                     const newIncomeCats = [];
                     const newAccounts = [];
 
-                    // Mappe lookup nome→id
-                    const catExpenseMap = {};
+                    // Mappe per lookup rapido nome→id
+                    const catExpenseMap = {}; // nome → id
                     const catIncomeMap  = {};
-                    const accMap        = {};
-                    existingCats.expense.forEach(c => { catExpenseMap[c.name.trim().toLowerCase()] = c.id; });
-                    existingCats.income.forEach(c =>  { catIncomeMap[c.name.trim().toLowerCase()]  = c.id; });
-                    existingAccs.forEach(a => { accMap[a.name.trim().toLowerCase()] = a.id; });
+                    const accMap        = {}; // nome → id
+                    existingCats.expense.forEach(c => { catExpenseMap[c.name.toLowerCase()] = c.id; });
+                    existingCats.income.forEach(c =>  { catIncomeMap[c.name.toLowerCase()]  = c.id; });
+                    [...getAccountsFilter()].forEach(a => { accMap[a.name.toLowerCase()] = a.id; });
 
-                    const COLORS = ['#FF6B6B','#4ECDC4','#4DA6FF','#AA96DA','#FFD93D','#95E1D3','#F06292','#BA68C8','#64B5F6','#4DB6AC','#81C784','#FF8A65','#A1887F','#90A4AE','#FFB74D','#AED581','#FF9800','#E91E63','#9C27B0','#00BCD4'];
-                    const ACC_COLORS = ['#2196F3','#4CAF50','#FF9800','#E91E63','#9C27B0','#00BCD4','#FF5722','#607D8B','#795548','#FFC107','#3F51B5','#009688'];
-                    let colorIdx = existingCats.expense.length + existingCats.income.length;
-                    let accColorIdx = existingAccs.length;
+                    const COLORS = ['#FF6B6B','#4ECDC4','#4DA6FF','#AA96DA','#FFD93D','#95E1D3','#F06292','#BA68C8','#64B5F6','#4DB6AC','#81C784','#FF8A65','#A1887F','#90A4AE','#FFB74D','#AED581','#4CAF50','#FF9800','#E91E63','#9C27B0'];
+                    const ACC_COLORS = ['#4CAF50','#2196F3','#FF9800','#E91E63','#9C27B0','#00BCD4','#FF5722','#607D8B','#795548','#FFC107'];
+                    let colorIdx = 0;
+                    let accColorIdx = 0;
 
-                    // Icone intelligenti per categoria
-                    const ICON_MAP = {
-                        'spesa': '🛒', 'supermercato': '🛒', 'mercato': '🛒',
-                        'carburante': '⛽', 'benzina': '⛽', 'gpl': '⛽',
-                        'bollette': '💡', 'bolletta': '💡', 'luce': '💡', 'gas': '💡', 'tim': '📱',
-                        'affitto': '🏠', 'casa': '🏠', 'condominio': '🏠',
-                        'ristoranti': '🍽️', 'ristorante': '🍽️', 'cena': '🍽️', 'pranzo': '🍽️',
-                        'trasporti': '🚌', 'trasporto': '🚌', 'treno': '🚌',
-                        'salute': '⚕️', 'farmacia': '💊', 'medico': '🏥',
-                        'svago': '🎬', 'cinema': '🎬', 'intrattenimento': '🎬',
-                        'viaggi': '✈️', 'viaggio': '✈️',
-                        'vacanze': '🏖️', 'vacanza': '🏖️',
-                        'istruzione': '📚', 'scuola': '📚',
-                        'lavoro': '💼', 'per lavoro': '💼',
-                        'shopping': '🛍️',
-                        'altro': '📦',
-                        'parcheggio': '🅿️', 'pedaggio': '🛣️', 'telepass': '🛣️',
-                        'camper': '🚐', 'auto': '🚗', 'manutenzione': '🔧',
-                        'polizze': '📋', 'rimessaggio': '🏗️',
-                        'scadenze': '📅',
-                        'avvocato': '⚖️',
-                        'stipendio': '💼', 'salario': '💼',
-                        'rimborso': '💳', 'rimborsi': '💳',
-                        'spese personali': '😊', 'personali': '😊',
-                        'fuori budget': '💸',
-                    };
-
-                    const getIcon = (name, type) => {
-                        const key = name.toLowerCase().trim();
-                        for (const [k, icon] of Object.entries(ICON_MAP)) {
-                            if (key.includes(k)) return icon;
-                        }
-                        return type === 'income' ? '💰' : '📦';
-                    };
-
-                    // Icone per conti
-                    const ACC_ICON_MAP = {
-                        'megliobanca': '🏦', 'banca': '🏦', 'conto': '🏦',
-                        'carta': '💳', 'card': '💳',
-                        'contanti': '💵', 'cash': '💵',
-                        'buoni pasto': '🍽️', 'buono': '🎫',
-                        'telepass': '🛣️',
-                        'camper': '🚐',
-                        'vacanze': '🏖️', 'budget viaggio': '✈️', 'viaggi': '✈️',
-                        'q8': '⛽', 'carburante': '⛽',
-                        'affitto': '🏠',
-                        'rate': '📅',
-                        'risparmio': '🐷',
-                    };
-
-                    const getAccIcon = (name) => {
-                        const key = name.toLowerCase().trim();
-                        for (const [k, icon] of Object.entries(ACC_ICON_MAP)) {
-                            if (key.includes(k)) return icon;
-                        }
-                        return '🏦';
-                    };
-
+                    // Funzione: trova o crea categoria
                     const getOrCreateCategory = (name, type) => {
-                        if (!name || name.trim() === '') return null;
+                        if (!name || name.trim() === '') return 'other';
                         const key = name.trim().toLowerCase();
                         const map = type === 'income' ? catIncomeMap : catExpenseMap;
                         if (map[key]) return map[key];
-                        const id = 'cat_' + key.replace(/[^a-z0-9]/g, '_') + '_' + Date.now() + '_' + Math.floor(Math.random()*1000);
-                        const icon = getIcon(name, type);
+                        // Crea nuova categoria
+                        const id = 'cat_' + key.replace(/[^a-z0-9]/g, '_') + '_' + Date.now();
+                        const icon = type === 'income' ? '💰' : '📦';
                         const color = COLORS[colorIdx++ % COLORS.length];
                         const catObj = { id, name: name.trim(), icon, color, archived: false };
                         map[key] = id;
@@ -1636,87 +1548,93 @@
                         return id;
                     };
 
+                    // Funzione: trova o crea conto
                     const getOrCreateAccount = (name) => {
-                        if (!name || name.trim() === '') return null;
+                        if (!name || name.trim() === '') return 'cash';
                         const key = name.trim().toLowerCase();
                         if (accMap[key]) return accMap[key];
-                        const id = 'acc_' + key.replace(/[^a-z0-9]/g, '_') + '_' + Date.now() + '_' + Math.floor(Math.random()*1000);
+                        // Crea nuovo conto
+                        const id = 'acc_' + key.replace(/[^a-z0-9]/g, '_') + '_' + Date.now();
                         const color = ACC_COLORS[accColorIdx++ % ACC_COLORS.length];
-                        const icon = getAccIcon(name);
-                        const accObj = { id, name: name.trim(), icon, color, archived: false, includeInTotal: true, tipologia: 'normale' };
+                        const accObj = { id, name: name.trim(), icon: '🏦', color };
                         accMap[key] = id;
                         newAccounts.push(accObj);
                         return id;
                     };
 
-                    // Conti da NON importare come conti (sono persone/destinazioni)
-                    const SKIP_AS_ACCOUNT = new Set(['franco', 'valentina', 'eur', 'valuta', 'bilancio']);
-
                     const importedTransactions = [];
-                    const skippedCount = { trasferimenti: 0, errori: 0, righeVuote: 0 };
+                    const skippedCount = { trasferimenti: 0, errori: 0 };
 
-                    // Salta header (riga 0)
                     for (let i = 1; i < lines.length; i++) {
                         try {
-                            const fields = parseLine(lines[i]);
-                            if (fields.length < 5) { skippedCount.righeVuote++; continue; }
-
-                            const data             = fields[0] || '';
-                            const tipologia        = (fields[1] || '').trim();
-                            const dalConto         = (fields[2] || '').trim();
-                            const alContoCategoria = (fields[3] || '').trim();
-                            const importoRaw       = fields[4] || '0';
-                            const tagRaw           = fields[8] || '';
-                            const note             = (fields[9] || '').trim();
-
-                            // Salta righe non valide (righe bilancio, ecc.)
-                            if (!tipologia || !['spesa','entrata','trasferimento'].includes(tipologia.toLowerCase())) {
-                                skippedCount.righeVuote++;
-                                continue;
+                            // Parse CSV robusto (gestisce virgole dentro virgolette)
+                            const fields = [];
+                            let current = '';
+                            let inQuotes = false;
+                            const raw = lines[i];
+                            for (let j = 0; j < raw.length; j++) {
+                                const ch = raw[j];
+                                if (ch === '"') {
+                                    if (inQuotes && raw[j+1] === '"') { current += '"'; j++; }
+                                    else inQuotes = !inQuotes;
+                                } else if (ch === ',' && !inQuotes) {
+                                    fields.push(current.trim());
+                                    current = '';
+                                } else {
+                                    current += ch;
+                                }
                             }
+                            fields.push(current.trim());
+
+                            if (fields.length < 5) continue;
+
+                            // Colonne 1Money CSV: Data, Tipologia, Dal conto, Al conto/Categoria, Importo, Valuta, Tasso, Conto2, Tag, Note
+                            const data             = fields[0] || '';
+                            const tipologia        = fields[1] || '';
+                            const dalConto         = fields[2] || '';
+                            const alContoCategoria = fields[3] || '';
+                            const importo          = fields[4] || '0';
+                            const tagRaw           = fields[8] || '';
+                            const note             = fields[9] || fields[7] || '';
 
                             // Salta trasferimenti
-                            if (tipologia.toLowerCase() === 'trasferimento') {
+                            if (tipologia === 'Trasferimento' || tipologia.toLowerCase().includes('transfer')) {
                                 skippedCount.trasferimenti++;
                                 continue;
                             }
 
-                            // Parse data gg/mm/aa o gg/mm/aaaa
+                            // Parse data (gg/mm/aa o gg/mm/aaaa)
                             let dateObj = new Date();
                             const dateParts = data.split('/');
                             if (dateParts.length === 3) {
-                                const g = parseInt(dateParts[0]);
-                                const m = parseInt(dateParts[1]) - 1;
-                                const y = dateParts[2].length === 2 ? 2000 + parseInt(dateParts[2]) : parseInt(dateParts[2]);
-                                dateObj = new Date(y, m, g, 12, 0, 0);
+                                const giorno = parseInt(dateParts[0]);
+                                const mese   = parseInt(dateParts[1]) - 1;
+                                const anno   = dateParts[2].length === 2 ? 2000 + parseInt(dateParts[2]) : parseInt(dateParts[2]);
+                                dateObj = new Date(anno, mese, giorno);
                             }
 
-                            const type = tipologia.toLowerCase() === 'entrata' ? 'income' : 'expense';
+                            // Tipo transazione
+                            const type = tipologia === 'Entrata' ? 'income' : 'expense';
 
-                            // Estrai categoria e sottocategoria da "Categoria (Sottocategoria)"
+                            // Estrai categoria (prima delle parentesi) e sottocategoria (dentro parentesi)
                             const catMatch    = alContoCategoria.match(/^([^(]+)/);
                             const catName     = catMatch ? catMatch[1].trim() : alContoCategoria.trim();
                             const subCatMatch = alContoCategoria.match(/\(([^)]+)\)/);
                             const subCat      = subCatMatch ? subCatMatch[1].trim() : '';
 
-                            // Per entrate, la categoria è il campo "AL CONTO" (es. "Franco", "Valentina", "Stipendio")
-                            // Per spese, è la categoria reale
+                            // Trova o crea categoria
                             const categoryId = getOrCreateCategory(catName, type);
-                            if (!categoryId) { skippedCount.errori++; continue; }
 
-                            // Conto: skip se è un nome persona o colonna non valida
-                            const dalContoKey = dalConto.toLowerCase();
-                            if (SKIP_AS_ACCOUNT.has(dalContoKey)) { skippedCount.righeVuote++; continue; }
+                            // Trova o crea conto
                             const accountId = getOrCreateAccount(dalConto);
-                            if (!accountId) { skippedCount.errori++; continue; }
 
-                            // Nota finale: sottocategoria + nota originale
-                            let finalNote = note;
+                            // Nota: combina sottocategoria + nota originale
+                            let finalNote = note || '';
                             if (subCat && subCat.toLowerCase() !== catName.toLowerCase()) {
                                 finalNote = subCat + (finalNote ? ' · ' + finalNote : '');
                             }
 
-                            // Tag
+                            // Tag: possono essere separati da virgola o punto e virgola
                             const tagIds = [];
                             if (tagRaw.trim()) {
                                 const tagNames = tagRaw.split(/[,;]/).map(t => t.trim()).filter(Boolean);
@@ -1726,11 +1644,12 @@
                                 });
                             }
 
-                            const amount = Math.abs(parseFloat(importoRaw.replace(',', '.')) || 0);
-                            if (amount === 0) { skippedCount.righeVuote++; continue; }
+                            // Importo
+                            const amount = Math.abs(parseFloat(importo.replace(',', '.')) || 0);
+                            if (amount === 0) continue;
 
                             importedTransactions.push({
-                                id: Date.now() + '_' + i + '_' + Math.floor(Math.random()*100000),
+                                id: Date.now() + i + Math.random(),
                                 type,
                                 amount,
                                 category: categoryId,
@@ -1746,34 +1665,40 @@
                         }
                     }
 
-                    // Salva categorie
-                    saveCategoriestoStorage({
-                        expense: [...existingCats.expense, ...newExpenseCats],
-                        income:  [...existingCats.income,  ...newIncomeCats]
-                    });
+                    // Salva nuove categorie
+                    if (newExpenseCats.length > 0 || newIncomeCats.length > 0) {
+                        saveCategoriestoStorage({
+                            expense: [...existingCats.expense, ...newExpenseCats],
+                            income:  [...existingCats.income,  ...newIncomeCats]
+                        });
+                    }
 
-                    // Salva conti
-                    saveCustomTransactionAccounts([...existingAccs, ...newAccounts]);
+                    // Salva nuovi conti
+                    if (newAccounts.length > 0) {
+                        saveCustomTransactionAccounts([...existingAccs, ...newAccounts]);
+                    }
 
+                    // Aggiungi transazioni (più recenti prima)
                     // Salva transazioni su IndexedDB per l'account principale attivo
                     importedTransactions.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-                    return window.loadTransactionsFromDB(activeAccountId).then(existing => {
-                        const merged = [...importedTransactions, ...(existing || [])];
-                        // dedup per id
-                        const seen = {};
-                        const unique = [];
-                        merged.forEach(t => {
-                            const k = String(t.id);
-                            if (!seen[k]) { seen[k] = true; unique.push(t); }
-                        });
-                        unique.sort((a,b) => new Date(b.date) - new Date(a.date));
+                    const existing = await window.loadTransactionsFromDB(activeAccountId);
+                    const merged = [...importedTransactions, ...(existing || [])];
 
-                        return window.saveTransactionsToDB(activeAccountId, unique).then(() => {
-                            setTransactions(unique);
-                            setCategoriesVersion(v => v + 1);
-                        });
+                    // dedup per id
+                    const seen = {};
+                    const unique = [];
+                    merged.forEach(t => {
+                        const k = String(t.id);
+                        if (!seen[k]) { seen[k] = true; unique.push(t); }
                     });
+                    unique.sort((a,b) => new Date(b.date) - new Date(a.date));
+
+                    await window.saveTransactionsToDB(activeAccountId, unique);
+                    setTransactions(unique);
+                    setCategoriesVersion(v => v + 1);
+
+                    
 
                     return {
                         success: true,
@@ -1794,8 +1719,8 @@
                 if (!file) return;
                 
                 const reader = new FileReader();
-                reader.onload = (e) => {
-                    const result = import1MoneyCSV(e.target.result);
+                reader.onload = async (e) => {
+                    const result = await import1MoneyCSV(e.target.result);
                     if (result.success) {
                         let msg = `✅ Import completato!\n\n`;
                         msg += `📥 Transazioni importate: ${result.imported}\n`;
@@ -1814,7 +1739,6 @@
             // ============ IMPORT SQLITE 1MONEY ============
             const handleSQLiteImport = (file) => {
                 return window.import1MoneyDB(file).then((result) => {
-                    // 1) Merge categorie (localStorage)
                     const existingCats = getCategoriesFromStorage();
                     const mergedExpense = [...existingCats.expense];
                     const mergedIncome = [...existingCats.income];
@@ -1827,7 +1751,6 @@
                     });
                     saveCategoriestoStorage({ expense: mergedExpense, income: mergedIncome });
 
-                    // 2) Merge conti (localStorage)
                     const existingAccs = getCustomTransactionAccounts();
                     const mergedAccs = [...existingAccs];
                     result.customAccounts.forEach(function(acc) {
@@ -1835,38 +1758,16 @@
                     });
                     saveCustomTransactionAccounts(mergedAccs);
 
-                    // 3) Salva transazioni su IndexedDB PER L'ACCOUNT PRINCIPALE attivo (activeAccountId)
-                    //    (senza sovrascrivere t.account che rappresenta il "conto" / metodo di pagamento)
-                    const imported = (result.transactions || []).slice().sort((a,b) => new Date(b.date) - new Date(a.date));
+                    setTransactions(function(prev) { return [...result.transactions, ...prev]; });
+                    setCategoriesVersion(function(v) { return v + 1; });
 
-                    return window.loadTransactionsFromDB(activeAccountId).then(existing => {
-                        const mergedTx = [...imported, ...(existing || [])];
-                        // dedup semplice per id
-                        const seen = {};
-                        const unique = [];
-                        mergedTx.forEach(t => {
-                            const k = String(t.id);
-                            if (!seen[k]) { seen[k] = true; unique.push(t); }
-                        });
-                        unique.sort((a,b) => new Date(b.date) - new Date(a.date));
-
-                        return window.saveTransactionsToDB(activeAccountId, unique).then(() => {
-                            setTransactions(unique);
-                            setCategoriesVersion(function(v) { return v + 1; });
-
-                            // Suggerimento: dopo import, mostra tutti i periodi
-                            if (typeof setPeriodFilter === 'function') {
-                                try { setPeriodFilter('all'); } catch(e) {}
-                            }
-
-                            return {
-                                categories: result.stats.categories,
-                                accounts: result.stats.accounts,
-                                transactions: result.stats.transactions,
-                                skipped: result.stats.skipped
-                            };
-                        });
-                    });
+                    // Ritorna numeri diretti (non oggetti) per il modal
+                    return {
+                        categories: result.stats.categories,
+                        accounts: result.stats.accounts,
+                        transactions: result.stats.transactions,
+                        skipped: result.stats.skipped
+                    };
                 });
             };
 
@@ -2721,7 +2622,6 @@
                             setShowSQLiteImportModal={setShowSQLiteImportModal}
                             setShowManageCategoriesModal={setShowManageCategoriesModal}
                             setShowManageAccountsModal={setShowManageAccountsModal}
-                            setTransactions={setTransactions}
                         />
                     )}
 
@@ -3193,7 +3093,7 @@
 
             return (
                 <ul className="transaction-list">
-                    {getVisibleTransactions().map(transaction => {
+                    {transactions.map(transaction => {
                         const category = getCategoryInfo(transaction.type, transaction.category);
                         const account = getAccountInfo(transaction.account || 'cash');
                         return (
@@ -4405,7 +4305,7 @@
             );
         }
 
-        function SettingsModal({ onClose, settings, onSave, handleFileUpload, accounts, activeAccountId, getActiveAccount, deleteAccount, setShowSQLiteImportModal, setShowManageCategoriesModal, setShowManageAccountsModal, setTransactions }) {
+        function SettingsModal({ onClose, settings, onSave, handleFileUpload, accounts, activeAccountId, getActiveAccount, deleteAccount, setShowSQLiteImportModal, setShowManageCategoriesModal, setShowManageAccountsModal }) {
             const [monthStartDay, setMonthStartDay] = useState(settings.monthStartDay);
 
             const handleSubmit = (e) => {
@@ -4660,15 +4560,12 @@
                                             const accName = getActiveAccount()?.name || 'questo account';
                                             if (window.confirm(`⚠️ Cancellare tutte le transazioni di "${accName}"?\n\nCategorie e impostazioni rimarranno invariate.`)) {
                                                 if (window.confirm(`🔴 CONFERMA\n\nElimino TUTTE le transazioni di "${accName}".\n\nProcedere?`)) {
-                                                    setTransactions([]);
-                                                    setTimeout(() => {
-                                                        window.deleteTransactionsFromDB(activeAccountId).then(() => {
-                                                            onClose();
-                                                            window.location.reload();
-                                                        });
-                                                    }, 100);
+                                                    const prefix = `account_${activeAccountId}_`;
+                                                    window.deleteTransactionsFromDB(activeAccountId);
+                                                    onClose();
+                                                    window.location.reload();
                                                 }
-                                                }
+                                            }
                                         }}
                                         style={{
                                             width: '100%',
@@ -4701,20 +4598,26 @@
                                         onClick={() => {
                                             if (window.confirm(`🔴 RESET COMPLETO\n\nStai per cancellare TUTTO: transazioni, categorie, conti e impostazioni.\n\nQuesta operazione è IRREVERSIBILE.\n\nSei sicuro?`)) {
                                                 if (window.confirm(`⛔ ULTIMA CONFERMA\n\nTutto verrà eliminato e l'app tornerà alle impostazioni di fabbrica.\n\nProcedere?`)) {
-                                                    setTransactions([]);
-                                                    setTimeout(() => {
-                                                        // Cancella tutto localStorage
-                                                        localStorage.clear();
-                                                        // Cancella intero database IndexedDB
-                                                        if (window.MT_DB) {
-                                                            window.MT_DB.close();
-                                                            window.MT_DB = null;
-                                                        }
-                                                        const deleteReq = indexedDB.deleteDatabase('MoneyTracker6');
-                                                        deleteReq.onsuccess = () => { window.location.reload(); };
-                                                        deleteReq.onerror = () => { window.location.reload(); };
-                                                        deleteReq.onblocked = () => { window.location.reload(); };
-                                                    }, 100);
+                                                    // Cancella dati account attivo
+                                                    const prefix = `account_${activeAccountId}_`;
+                                                    window.deleteTransactionsFromDB(activeAccountId);
+                                                    // Cancella tutti i budget per periodo
+                                                    const keysToDelete = [];
+                                                    for (let i = 0; i < localStorage.length; i++) {
+                                                        const k = localStorage.key(i);
+                                                        if (k && k.startsWith(prefix + 'budget_')) keysToDelete.push(k);
+                                                    }
+                                                    keysToDelete.forEach(k => localStorage.removeItem(k));
+                                                    localStorage.removeItem(prefix + 'budgets'); // legacy
+                                                    localStorage.removeItem(prefix + 'settings');
+                                                    localStorage.removeItem(prefix + 'categoryOrder');
+                                                    localStorage.removeItem(prefix + 'customCategories');
+                                                    // Cancella dati globali
+                                                    localStorage.removeItem('customCategories_v2');
+                                                    localStorage.removeItem('customTransactionAccounts');
+                                                    localStorage.removeItem('categoryOrder');
+                                                    onClose();
+                                                    window.location.reload();
                                                 }
                                             }
                                         }}
