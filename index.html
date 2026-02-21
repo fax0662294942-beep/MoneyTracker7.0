@@ -835,32 +835,8 @@
 
         // ============ CATEGORIE E CONTI BASE (DEFAULT) ============
         const DEFAULT_CATEGORIES = {
-            expense: [
-                { id: 'food', name: 'Spesa', icon: '🛒', color: '#FF6B6B' },
-                { id: 'restaurant', name: 'Ristoranti', icon: '🍕', color: '#FF8E8E' },
-                { id: 'transport', name: 'Trasporti', icon: '🚗', color: '#4ECDC4' },
-                { id: 'fuel', name: 'Carburante', icon: '⛽', color: '#5ED5D5' },
-                { id: 'bills', name: 'Bollette', icon: '💡', color: '#4DA6FF' },
-                { id: 'rent', name: 'Affitto', icon: '🏠', color: '#3D8BFF' },
-                { id: 'shopping', name: 'Shopping', icon: '🛍️', color: '#95E1D3' },
-                { id: 'health', name: 'Salute', icon: '⚕️', color: '#AA96DA' },
-                { id: 'entertainment', name: 'Svago', icon: '🎬', color: '#FCBAD3' },
-                { id: 'travel', name: 'Viaggi', icon: '✈️', color: '#FFD93D' },
-                { id: 'vacation', name: 'Vacanze', icon: '🏖️', color: '#FFF176' },
-                { id: 'education', name: 'Istruzione', icon: '📚', color: '#A8D8EA' },
-                { id: 'work', name: 'Per Lavoro', icon: '💼', color: '#8D6E63' },
-                { id: 'family', name: 'Famiglia', icon: '👨‍👩‍👧', color: '#CE93D8' },
-                { id: 'personal', name: 'Spese Personali', icon: '😊', color: '#FFB74D' },
-                { id: 'other', name: 'Altro', icon: '📦', color: '#B0BEC5' }
-            ],
-            income: [
-                { id: 'salary', name: 'Stipendio', icon: '💼', color: '#6BCF7F' },
-                { id: 'freelance', name: 'Freelance', icon: '💻', color: '#4CAF50' },
-                { id: 'investment', name: 'Investimenti', icon: '📈', color: '#8BC34A' },
-                { id: 'refund', name: 'Rimborsi', icon: '💳', color: '#9CCC65' },
-                { id: 'gift', name: 'Regalo', icon: '🎁', color: '#AED581' },
-                { id: 'other', name: 'Altro', icon: '💰', color: '#C5E1A5' }
-            ]
+            expense: [],
+            income: []
         };
 
         // Funzioni per gestire categorie e conti dinamici
@@ -1070,7 +1046,7 @@
                                 if (oldTxs.length > 0) {
                                     // Migra da localStorage a IndexedDB
                                     window.saveTransactionsToDB(activeAccountId, oldTxs).then(() => {
-                                        window.deleteTransactionsFromDB(activeAccountId);
+                                        localStorage.removeItem(prefix + 'transactions');
                                         setTransactions(oldTxs);
                                     });
                                     return;
@@ -1488,8 +1464,31 @@
             // IMPORT DA 1MONEY CSV - versione completa senza perdita dati
             const import1MoneyCSV = (csvText) => {
                 try {
-                    const lines = csvText.split('\n').filter(line => line.trim());
+                    // Rimuovi BOM se presente
+                    const text = csvText.replace(/^\uFEFF/, '');
+                    const lines = text.split('\n').filter(line => line.trim());
                     if (lines.length < 2) throw new Error('File CSV vuoto o non valido');
+
+                    // Parse CSV robusto
+                    const parseLine = (raw) => {
+                        const fields = [];
+                        let current = '';
+                        let inQuotes = false;
+                        for (let j = 0; j < raw.length; j++) {
+                            const ch = raw[j];
+                            if (ch === '"') {
+                                if (inQuotes && raw[j+1] === '"') { current += '"'; j++; }
+                                else inQuotes = !inQuotes;
+                            } else if (ch === ',' && !inQuotes) {
+                                fields.push(current.trim());
+                                current = '';
+                            } else {
+                                current += ch;
+                            }
+                        }
+                        fields.push(current.trim());
+                        return fields;
+                    };
 
                     // Leggi categorie e conti esistenti
                     const existingCats = getCategoriesFromStorage();
@@ -1498,28 +1497,84 @@
                     const newIncomeCats = [];
                     const newAccounts = [];
 
-                    // Mappe per lookup rapido nome→id
-                    const catExpenseMap = {}; // nome → id
+                    // Mappe lookup nome→id
+                    const catExpenseMap = {};
                     const catIncomeMap  = {};
-                    const accMap        = {}; // nome → id
-                    existingCats.expense.forEach(c => { catExpenseMap[c.name.toLowerCase()] = c.id; });
-                    existingCats.income.forEach(c =>  { catIncomeMap[c.name.toLowerCase()]  = c.id; });
-                    [...getAccountsFilter()].forEach(a => { accMap[a.name.toLowerCase()] = a.id; });
+                    const accMap        = {};
+                    existingCats.expense.forEach(c => { catExpenseMap[c.name.trim().toLowerCase()] = c.id; });
+                    existingCats.income.forEach(c =>  { catIncomeMap[c.name.trim().toLowerCase()]  = c.id; });
+                    existingAccs.forEach(a => { accMap[a.name.trim().toLowerCase()] = a.id; });
 
-                    const COLORS = ['#FF6B6B','#4ECDC4','#4DA6FF','#AA96DA','#FFD93D','#95E1D3','#F06292','#BA68C8','#64B5F6','#4DB6AC','#81C784','#FF8A65','#A1887F','#90A4AE','#FFB74D','#AED581','#4CAF50','#FF9800','#E91E63','#9C27B0'];
-                    const ACC_COLORS = ['#4CAF50','#2196F3','#FF9800','#E91E63','#9C27B0','#00BCD4','#FF5722','#607D8B','#795548','#FFC107'];
-                    let colorIdx = 0;
-                    let accColorIdx = 0;
+                    const COLORS = ['#FF6B6B','#4ECDC4','#4DA6FF','#AA96DA','#FFD93D','#95E1D3','#F06292','#BA68C8','#64B5F6','#4DB6AC','#81C784','#FF8A65','#A1887F','#90A4AE','#FFB74D','#AED581','#FF9800','#E91E63','#9C27B0','#00BCD4'];
+                    const ACC_COLORS = ['#2196F3','#4CAF50','#FF9800','#E91E63','#9C27B0','#00BCD4','#FF5722','#607D8B','#795548','#FFC107','#3F51B5','#009688'];
+                    let colorIdx = existingCats.expense.length + existingCats.income.length;
+                    let accColorIdx = existingAccs.length;
 
-                    // Funzione: trova o crea categoria
+                    // Icone intelligenti per categoria
+                    const ICON_MAP = {
+                        'spesa': '🛒', 'supermercato': '🛒', 'mercato': '🛒',
+                        'carburante': '⛽', 'benzina': '⛽', 'gpl': '⛽',
+                        'bollette': '💡', 'bolletta': '💡', 'luce': '💡', 'gas': '💡', 'tim': '📱',
+                        'affitto': '🏠', 'casa': '🏠', 'condominio': '🏠',
+                        'ristoranti': '🍽️', 'ristorante': '🍽️', 'cena': '🍽️', 'pranzo': '🍽️',
+                        'trasporti': '🚌', 'trasporto': '🚌', 'treno': '🚌',
+                        'salute': '⚕️', 'farmacia': '💊', 'medico': '🏥',
+                        'svago': '🎬', 'cinema': '🎬', 'intrattenimento': '🎬',
+                        'viaggi': '✈️', 'viaggio': '✈️',
+                        'vacanze': '🏖️', 'vacanza': '🏖️',
+                        'istruzione': '📚', 'scuola': '📚',
+                        'lavoro': '💼', 'per lavoro': '💼',
+                        'shopping': '🛍️',
+                        'altro': '📦',
+                        'parcheggio': '🅿️', 'pedaggio': '🛣️', 'telepass': '🛣️',
+                        'camper': '🚐', 'auto': '🚗', 'manutenzione': '🔧',
+                        'polizze': '📋', 'rimessaggio': '🏗️',
+                        'scadenze': '📅',
+                        'avvocato': '⚖️',
+                        'stipendio': '💼', 'salario': '💼',
+                        'rimborso': '💳', 'rimborsi': '💳',
+                        'spese personali': '😊', 'personali': '😊',
+                        'fuori budget': '💸',
+                    };
+
+                    const getIcon = (name, type) => {
+                        const key = name.toLowerCase().trim();
+                        for (const [k, icon] of Object.entries(ICON_MAP)) {
+                            if (key.includes(k)) return icon;
+                        }
+                        return type === 'income' ? '💰' : '📦';
+                    };
+
+                    // Icone per conti
+                    const ACC_ICON_MAP = {
+                        'megliobanca': '🏦', 'banca': '🏦', 'conto': '🏦',
+                        'carta': '💳', 'card': '💳',
+                        'contanti': '💵', 'cash': '💵',
+                        'buoni pasto': '🍽️', 'buono': '🎫',
+                        'telepass': '🛣️',
+                        'camper': '🚐',
+                        'vacanze': '🏖️', 'budget viaggio': '✈️', 'viaggi': '✈️',
+                        'q8': '⛽', 'carburante': '⛽',
+                        'affitto': '🏠',
+                        'rate': '📅',
+                        'risparmio': '🐷',
+                    };
+
+                    const getAccIcon = (name) => {
+                        const key = name.toLowerCase().trim();
+                        for (const [k, icon] of Object.entries(ACC_ICON_MAP)) {
+                            if (key.includes(k)) return icon;
+                        }
+                        return '🏦';
+                    };
+
                     const getOrCreateCategory = (name, type) => {
-                        if (!name || name.trim() === '') return 'other';
+                        if (!name || name.trim() === '') return null;
                         const key = name.trim().toLowerCase();
                         const map = type === 'income' ? catIncomeMap : catExpenseMap;
                         if (map[key]) return map[key];
-                        // Crea nuova categoria
-                        const id = 'cat_' + key.replace(/[^a-z0-9]/g, '_') + '_' + Date.now();
-                        const icon = type === 'income' ? '💰' : '📦';
+                        const id = 'cat_' + key.replace(/[^a-z0-9]/g, '_') + '_' + Date.now() + '_' + Math.floor(Math.random()*1000);
+                        const icon = getIcon(name, type);
                         const color = COLORS[colorIdx++ % COLORS.length];
                         const catObj = { id, name: name.trim(), icon, color, archived: false };
                         map[key] = id;
@@ -1528,93 +1583,87 @@
                         return id;
                     };
 
-                    // Funzione: trova o crea conto
                     const getOrCreateAccount = (name) => {
-                        if (!name || name.trim() === '') return 'cash';
+                        if (!name || name.trim() === '') return null;
                         const key = name.trim().toLowerCase();
                         if (accMap[key]) return accMap[key];
-                        // Crea nuovo conto
-                        const id = 'acc_' + key.replace(/[^a-z0-9]/g, '_') + '_' + Date.now();
+                        const id = 'acc_' + key.replace(/[^a-z0-9]/g, '_') + '_' + Date.now() + '_' + Math.floor(Math.random()*1000);
                         const color = ACC_COLORS[accColorIdx++ % ACC_COLORS.length];
-                        const accObj = { id, name: name.trim(), icon: '🏦', color };
+                        const icon = getAccIcon(name);
+                        const accObj = { id, name: name.trim(), icon, color, archived: false, includeInTotal: true, tipologia: 'normale' };
                         accMap[key] = id;
                         newAccounts.push(accObj);
                         return id;
                     };
 
-                    const importedTransactions = [];
-                    const skippedCount = { trasferimenti: 0, errori: 0 };
+                    // Conti da NON importare come conti (sono persone/destinazioni)
+                    const SKIP_AS_ACCOUNT = new Set(['franco', 'valentina', 'eur', 'valuta', 'bilancio']);
 
+                    const importedTransactions = [];
+                    const skippedCount = { trasferimenti: 0, errori: 0, righeVuote: 0 };
+
+                    // Salta header (riga 0)
                     for (let i = 1; i < lines.length; i++) {
                         try {
-                            // Parse CSV robusto (gestisce virgole dentro virgolette)
-                            const fields = [];
-                            let current = '';
-                            let inQuotes = false;
-                            const raw = lines[i];
-                            for (let j = 0; j < raw.length; j++) {
-                                const ch = raw[j];
-                                if (ch === '"') {
-                                    if (inQuotes && raw[j+1] === '"') { current += '"'; j++; }
-                                    else inQuotes = !inQuotes;
-                                } else if (ch === ',' && !inQuotes) {
-                                    fields.push(current.trim());
-                                    current = '';
-                                } else {
-                                    current += ch;
-                                }
-                            }
-                            fields.push(current.trim());
+                            const fields = parseLine(lines[i]);
+                            if (fields.length < 5) { skippedCount.righeVuote++; continue; }
 
-                            if (fields.length < 5) continue;
-
-                            // Colonne 1Money CSV: Data, Tipologia, Dal conto, Al conto/Categoria, Importo, Valuta, Tasso, Conto2, Tag, Note
                             const data             = fields[0] || '';
-                            const tipologia        = fields[1] || '';
-                            const dalConto         = fields[2] || '';
-                            const alContoCategoria = fields[3] || '';
-                            const importo          = fields[4] || '0';
+                            const tipologia        = (fields[1] || '').trim();
+                            const dalConto         = (fields[2] || '').trim();
+                            const alContoCategoria = (fields[3] || '').trim();
+                            const importoRaw       = fields[4] || '0';
                             const tagRaw           = fields[8] || '';
-                            const note             = fields[9] || fields[7] || '';
+                            const note             = (fields[9] || '').trim();
+
+                            // Salta righe non valide (righe bilancio, ecc.)
+                            if (!tipologia || !['spesa','entrata','trasferimento'].includes(tipologia.toLowerCase())) {
+                                skippedCount.righeVuote++;
+                                continue;
+                            }
 
                             // Salta trasferimenti
-                            if (tipologia === 'Trasferimento' || tipologia.toLowerCase().includes('transfer')) {
+                            if (tipologia.toLowerCase() === 'trasferimento') {
                                 skippedCount.trasferimenti++;
                                 continue;
                             }
 
-                            // Parse data (gg/mm/aa o gg/mm/aaaa)
+                            // Parse data gg/mm/aa o gg/mm/aaaa
                             let dateObj = new Date();
                             const dateParts = data.split('/');
                             if (dateParts.length === 3) {
-                                const giorno = parseInt(dateParts[0]);
-                                const mese   = parseInt(dateParts[1]) - 1;
-                                const anno   = dateParts[2].length === 2 ? 2000 + parseInt(dateParts[2]) : parseInt(dateParts[2]);
-                                dateObj = new Date(anno, mese, giorno);
+                                const g = parseInt(dateParts[0]);
+                                const m = parseInt(dateParts[1]) - 1;
+                                const y = dateParts[2].length === 2 ? 2000 + parseInt(dateParts[2]) : parseInt(dateParts[2]);
+                                dateObj = new Date(y, m, g, 12, 0, 0);
                             }
 
-                            // Tipo transazione
-                            const type = tipologia === 'Entrata' ? 'income' : 'expense';
+                            const type = tipologia.toLowerCase() === 'entrata' ? 'income' : 'expense';
 
-                            // Estrai categoria (prima delle parentesi) e sottocategoria (dentro parentesi)
+                            // Estrai categoria e sottocategoria da "Categoria (Sottocategoria)"
                             const catMatch    = alContoCategoria.match(/^([^(]+)/);
                             const catName     = catMatch ? catMatch[1].trim() : alContoCategoria.trim();
                             const subCatMatch = alContoCategoria.match(/\(([^)]+)\)/);
                             const subCat      = subCatMatch ? subCatMatch[1].trim() : '';
 
-                            // Trova o crea categoria
+                            // Per entrate, la categoria è il campo "AL CONTO" (es. "Franco", "Valentina", "Stipendio")
+                            // Per spese, è la categoria reale
                             const categoryId = getOrCreateCategory(catName, type);
+                            if (!categoryId) { skippedCount.errori++; continue; }
 
-                            // Trova o crea conto
+                            // Conto: skip se è un nome persona o colonna non valida
+                            const dalContoKey = dalConto.toLowerCase();
+                            if (SKIP_AS_ACCOUNT.has(dalContoKey)) { skippedCount.righeVuote++; continue; }
                             const accountId = getOrCreateAccount(dalConto);
+                            if (!accountId) { skippedCount.errori++; continue; }
 
-                            // Nota: combina sottocategoria + nota originale
-                            let finalNote = note || '';
+                            // Nota finale: sottocategoria + nota originale
+                            let finalNote = note;
                             if (subCat && subCat.toLowerCase() !== catName.toLowerCase()) {
                                 finalNote = subCat + (finalNote ? ' · ' + finalNote : '');
                             }
 
-                            // Tag: possono essere separati da virgola o punto e virgola
+                            // Tag
                             const tagIds = [];
                             if (tagRaw.trim()) {
                                 const tagNames = tagRaw.split(/[,;]/).map(t => t.trim()).filter(Boolean);
@@ -1624,12 +1673,11 @@
                                 });
                             }
 
-                            // Importo
-                            const amount = Math.abs(parseFloat(importo.replace(',', '.')) || 0);
-                            if (amount === 0) continue;
+                            const amount = Math.abs(parseFloat(importoRaw.replace(',', '.')) || 0);
+                            if (amount === 0) { skippedCount.righeVuote++; continue; }
 
                             importedTransactions.push({
-                                id: Date.now() + i + Math.random(),
+                                id: Date.now() + '_' + i + '_' + Math.floor(Math.random()*100000),
                                 type,
                                 amount,
                                 category: categoryId,
@@ -1645,22 +1693,39 @@
                         }
                     }
 
-                    // Salva nuove categorie
-                    if (newExpenseCats.length > 0 || newIncomeCats.length > 0) {
-                        saveCategoriestoStorage({
-                            expense: [...existingCats.expense, ...newExpenseCats],
-                            income:  [...existingCats.income,  ...newIncomeCats]
-                        });
-                    }
+                    // Salva categorie
+                    saveCategoriestoStorage({
+                        expense: [...existingCats.expense, ...newExpenseCats],
+                        income:  [...existingCats.income,  ...newIncomeCats]
+                    });
 
-                    // Salva nuovi conti
-                    if (newAccounts.length > 0) {
-                        saveCustomTransactionAccounts([...existingAccs, ...newAccounts]);
-                    }
+                    // Salva conti
+                    saveCustomTransactionAccounts([...existingAccs, ...newAccounts]);
 
-                    // Aggiungi transazioni (più recenti prima)
+                    // Salva transazioni direttamente su IndexedDB per ogni conto
                     importedTransactions.sort((a, b) => new Date(b.date) - new Date(a.date));
-                    setTransactions(prev => [...importedTransactions, ...prev]);
+
+                    // Raggruppa per account e salva
+                    const byAccount = {};
+                    importedTransactions.forEach(t => {
+                        if (!byAccount[t.account]) byAccount[t.account] = [];
+                        byAccount[t.account].push(t);
+                    });
+
+                    const savePromises = Object.entries(byAccount).map(([accId, txs]) => {
+                        return window.loadTransactionsFromDB(accId).then(existing => {
+                            const merged = [...txs, ...existing];
+                            return window.saveTransactionsToDB(accId, merged);
+                        });
+                    });
+
+                    Promise.all(savePromises).then(() => {
+                        // Ricarica le transazioni dell'account attivo
+                        window.loadTransactionsFromDB(activeAccountId).then(txs => {
+                            setTransactions(txs.sort((a,b) => new Date(b.date) - new Date(a.date)));
+                        });
+                        setCategoriesVersion(v => v + 1);
+                    });
 
                     return {
                         success: true,
