@@ -1,6 +1,44 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
+<script>
+(function(){
+  function panel(){
+    var pre=document.getElementById("mt-debug");
+    if(!pre){
+      pre=document.createElement("pre");
+      pre.id="mt-debug";
+      pre.style.cssText="position:fixed;inset:0;z-index:999999;background:#111;color:#0f0;padding:12px;white-space:pre-wrap;overflow:auto;font-size:12px;";
+      document.documentElement.appendChild(pre);
+    }
+    return pre;
+  }
+  function show(msg){
+    panel().textContent += msg + "\n";
+  }
+  window.addEventListener("error", function(e){
+    show("❌ ERROR: " + (e.message || e.error));
+    if(e.filename) show("File: " + e.filename + ":" + e.lineno + ":" + e.colno);
+    if(e.error && e.error.stack) show("Stack:\n" + e.error.stack);
+  });
+  window.addEventListener("unhandledrejection", function(e){
+    show("❌ PROMISE: " + (e.reason && e.reason.message ? e.reason.message : String(e.reason)));
+    if(e.reason && e.reason.stack) show("Stack:\n" + e.reason.stack);
+  });
+  document.addEventListener("DOMContentLoaded", function(){
+    show("✅ Debug attivo. DOMContentLoaded.");
+    // basic library presence after a short delay
+    setTimeout(function(){
+      var missing=[];
+      if(!window.React) missing.push("React");
+      if(!window.ReactDOM) missing.push("ReactDOM");
+      if(!window.Babel) missing.push("Babel");
+      if(missing.length) show("⏱️ Timeout: librerie mancanti: " + missing.join(", "));
+    }, 6000);
+  });
+})();
+</script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#667eea">
@@ -22,9 +60,9 @@
     </script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js';"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js';"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js';"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/sql.js@1.8.0/dist/sql-wasm.js';"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js';" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/sql.js@1.8.0/dist/sql-wasm.js';" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <style>
         * {
             margin: 0;
@@ -2234,8 +2272,2396 @@
                                 ].map(({ id, label }) => (
                                     <button
                                         key={id}
-                                        onClick={() => (window.confirm(`Eliminare "${acc.name}"?
-Tutti i dati verranno cancellati!`) && deleteAccount(acc.id))}
+                                        onClick={() => { setViewMode(id); if (id !== 'custom') setPeriodOffset(0); }}
+                                        style={{
+                                            padding: '5px 13px',
+                                            borderRadius: '20px',
+                                            border: 'none',
+                                            background: viewMode === id ? 'white' : 'rgba(255,255,255,0.25)',
+                                            color: viewMode === id ? '#667eea' : 'white',
+                                            fontWeight: viewMode === id ? 'bold' : 'normal',
+                                            fontSize: '13px',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.15s'
+                                        }}
+                                    >{label}</button>
+                                ))}
+                            </div>
+
+                            {/* Date picker inline per custom */}
+                            {viewMode === 'custom' && (
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'center', marginBottom: '4px' }}>
+                                    <input
+                                        type="date"
+                                        value={customDateRange.start || ''}
+                                        onChange={e => setCustomDateRange(prev => ({ ...prev, start: e.target.value }))}
+                                        style={{ padding: '5px 8px', borderRadius: '8px', border: 'none', fontSize: '13px', background: 'rgba(255,255,255,0.9)', color: '#333' }}
+                                    />
+                                    <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '13px' }}>→</span>
+                                    <input
+                                        type="date"
+                                        value={customDateRange.end || ''}
+                                        onChange={e => setCustomDateRange(prev => ({ ...prev, end: e.target.value }))}
+                                        style={{ padding: '5px 8px', borderRadius: '8px', border: 'none', fontSize: '13px', background: 'rgba(255,255,255,0.9)', color: '#333' }}
+                                    />
+                                </div>
+                            )}
+
+                            <div style={{ 
+                                color: 'rgba(255,255,255,0.9)', 
+                                fontSize: '13px', 
+                                marginTop: '4px',
+                                fontWeight: '500',
+                                display: viewMode === 'all' || (viewMode === 'custom') ? 'none' : 'flex',
+                                alignItems: 'center',
+                                gap: '10px'
+                            }}>
+                                <button
+                                    onClick={goToPreviousPeriod}
+                                    style={{
+                                        background: 'rgba(255,255,255,0.2)',
+                                        border: 'none',
+                                        color: 'white',
+                                        padding: '6px 12px',
+                                        borderRadius: '6px',
+                                        cursor: 'pointer',
+                                        fontSize: '16px'
+                                    }}
+                                >
+                                    ◀
+                                </button>
+                                
+                                <div style={{ 
+                                    flex: 1, 
+                                    textAlign: 'center',
+                                    background: 'rgba(255,255,255,0.2)',
+                                    padding: '6px 12px',
+                                    borderRadius: '6px'
+                                }}>
+                                    {formatPeriodDisplay()}
+                                </div>
+                                
+                                <button
+                                    onClick={goToNextPeriod}
+                                    style={{
+                                        background: 'rgba(255,255,255,0.2)',
+                                        border: 'none',
+                                        color: 'white',
+                                        padding: '6px 12px',
+                                        borderRadius: '6px',
+                                        cursor: 'pointer',
+                                        fontSize: '16px'
+                                    }}
+                                >
+                                    ▶
+                                </button>
+                                
+                                {periodOffset !== 0 && (
+                                    <button
+                                        onClick={goToCurrentPeriod}
+                                        style={{
+                                            background: 'rgba(255,255,255,0.9)',
+                                            border: 'none',
+                                            color: '#667eea',
+                                            padding: '6px 12px',
+                                            borderRadius: '6px',
+                                            cursor: 'pointer',
+                                            fontSize: '12px',
+                                            fontWeight: 'bold'
+                                        }}
+                                    >
+                                        Oggi
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Label periodo per 'all' e 'custom' con date valide */}
+                            {(viewMode === 'all' || (viewMode === 'custom' && customDateRange.start && customDateRange.end)) && (
+                                <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.9)', fontSize: '13px', fontWeight: '500', marginTop: '2px' }}>
+                                    {formatPeriodDisplay()}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="balance-card">
+                        <div className="balance-label">Saldo {formatPeriodDisplay()}</div>
+                        <div className="balance-amount">€ {balance.toFixed(2)}</div>
+                        <div className="stats-row" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
+                            <div className="stat-box income">
+                                <div className="stat-label">Entrate</div>
+                                <div className="stat-value income">€ {totalIncome.toFixed(2)}</div>
+                            </div>
+                            <div className="stat-box expense">
+                                <div className="stat-label">Uscite</div>
+                                <div className="stat-value expense">€ {totalExpense.toFixed(2)}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {currentPage === 'accounts' && (
+                        <AccountsView
+                            transactions={filteredTransactions}
+                            onAdjustBalance={(accId, amount, note) => {
+                                const t = {
+                                    id: Date.now(),
+                                    type: amount >= 0 ? 'income' : 'expense',
+                                    amount: Math.abs(amount),
+                                    category: amount >= 0 ? 'other' : 'other',
+                                    account: accId,
+                                    note: note || '⚖️ Aggiustamento saldo',
+                                    date: new Date().toISOString(),
+                                    isBalanceAdjustment: true
+                                };
+                                setTransactions(prev => [t, ...prev]);
+                            }}
+                            onUpdateAccount={(updatedAcc) => {
+                                const accs = getCustomTransactionAccounts();
+                                const updated = accs.map(a => a.id === updatedAcc.id ? { ...a, ...updatedAcc } : a);
+                                saveCustomTransactionAccounts(updated);
+                            }}
+                        />
+                    )}
+
+                    {currentPage === 'categories' && (
+                        <CategoriesView 
+                            expenses={getMonthlyExpensesByCategory()}
+                            budgets={budgets}
+                            onCategoryClick={handleCategoryClick}
+                        />
+                    )}
+
+                    {currentPage === 'home' && (
+                        <div
+                            ref={swipeContainerRef}
+                            style={{ transform: `translateX(${swipeAnim}px)`, transition: swipeAnim === 0 ? 'transform 0.25s cubic-bezier(0.25,0.46,0.45,0.94)' : 'none', willChange: 'transform' }}
+                        >
+                            <div className="tabs">
+                                <button 
+                                    className={`tab ${activeTab === 'transactions' ? 'active' : ''}`}
+                                    onClick={() => setActiveTab('transactions')}
+                                >
+                                    Transazioni
+                                </button>
+                                <button 
+                                    className={`tab ${activeTab === 'recent' ? 'active' : ''}`}
+                                    onClick={() => setActiveTab('recent')}
+                                >
+                                    Recenti
+                                </button>
+                            </div>
+
+                            <div className="content">
+                                {categoryFilter && (
+                                    <div style={{
+                                        background: '#e3f2fd',
+                                        padding: '12px 16px',
+                                        borderRadius: '8px',
+                                        marginBottom: '15px',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center'
+                                    }}>
+                                        <div>
+                                            <span style={{ fontSize: '18px', marginRight: '8px' }}>
+                                                {getCategoriesFromStorage().expense.find(c => c.id === categoryFilter)?.icon}
+                                            </span>
+                                            <span style={{ fontWeight: 'bold' }}>
+                                                Filtro: {getCategoriesFromStorage().expense.find(c => c.id === categoryFilter)?.name}
+                                            </span>
+                                        </div>
+                                        <button
+                                            onClick={() => setCategoryFilter(null)}
+                                            style={{
+                                                background: 'none',
+                                                border: 'none',
+                                                color: '#1976d2',
+                                                cursor: 'pointer',
+                                                fontSize: '14px',
+                                                fontWeight: 'bold'
+                                            }}
+                                        >
+                                            ✕ Rimuovi
+                                        </button>
+                                    </div>
+                                )}
+
+                                <div style={{
+                                    display: 'flex',
+                                    gap: '10px',
+                                    marginBottom: '15px',
+                                    alignItems: 'center'
+                                }}>
+                                    <button
+                                        onClick={() => setTransfersOnlyFilter(!transfersOnlyFilter)}
+                                        style={{
+                                            background: transfersOnlyFilter ? '#FF9800' : '#e0e0e0',
+                                            color: transfersOnlyFilter ? 'white' : '#666',
+                                            border: 'none',
+                                            padding: '8px 16px',
+                                            borderRadius: '20px',
+                                            cursor: 'pointer',
+                                            fontSize: '13px',
+                                            fontWeight: 'bold',
+                                            transition: 'all 0.3s'
+                                        }}
+                                    >
+                                        🔄 {transfersOnlyFilter ? 'Mostra tutti' : 'Solo trasferimenti'}
+                                    </button>
+                                    {transfersOnlyFilter && (
+                                        <span style={{ fontSize: '12px', color: '#666' }}>
+                                            {filteredTransactions.filter(t => t.isTransfer).length} trasferimenti
+                                        </span>
+                                    )}
+                                </div>
+                                
+                                {(() => {
+                                    let displayTransactions = filteredTransactions;
+                                    if (categoryFilter) displayTransactions = displayTransactions.filter(t => t.category === categoryFilter);
+                                    if (transfersOnlyFilter) displayTransactions = displayTransactions.filter(t => t.isTransfer);
+                                    
+                                    return displayTransactions.length === 0 ? (
+                                        <div className="empty-state">
+                                            <div className="empty-icon">📊</div>
+                                            <h3>Nessuna transazione</h3>
+                                            <p>{categoryFilter ? 'Nessuna transazione per questa categoria' : transfersOnlyFilter ? 'Nessun trasferimento trovato' : 'Inizia ad aggiungere le tue spese e entrate!'}</p>
+                                        </div>
+                                    ) : (
+                                        <TransactionList 
+                                            transactions={displayTransactions} 
+                                            onDelete={deleteTransaction}
+                                        />
+                                    );
+                                })()}
+                            </div>
+                        </div>
+                    )}
+
+                    {currentPage === 'budget' && (
+                        <div
+                            ref={currentPage === 'budget' ? swipeContainerRef : null}
+                            style={{ transform: `translateX(${swipeAnim}px)`, transition: swipeAnim === 0 ? 'transform 0.25s cubic-bezier(0.25,0.46,0.45,0.94)' : 'none', willChange: 'transform' }}
+                        >
+                        <BudgetPage 
+                            budgets={budgets}
+                            expenses={getMonthlyExpensesByCategory()}
+                            onSetBudget={setBudget}
+                            onOpenModal={() => setShowBudgetModal(true)}
+                        />
+                        </div>
+                    )}
+
+                    {currentPage === 'stats' && (
+                        <div className="content">
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                                <h2>Statistiche</h2>
+                                <button 
+                                    onClick={exportToExcel}
+                                    style={{
+                                        padding: '10px 20px',
+                                        background: '#4CAF50',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '8px',
+                                        cursor: 'pointer',
+                                        fontWeight: 'bold'
+                                    }}
+                                >
+                                    📊 Esporta Excel
+                                </button>
+                            </div>
+                            
+                            {transactions.length > 0 ? (
+                                <>
+                                    <div className="chart-container">
+                                        <h3>Trend Ultimi 6 Mesi</h3>
+                                        <canvas ref={trendChartRef}></canvas>
+                                    </div>
+                                    
+                                    {Object.keys(getMonthlyExpensesByCategory()).length > 0 && (
+                                        <div className="chart-container">
+                                            <h3>Spese per Categoria (Questo Mese)</h3>
+                                            <canvas ref={chartRef}></canvas>
+                                        </div>
+                                    )}
+                                    
+                                    <MonthlyStats transactions={getCurrentMonthTransactions()} />
+                                </>
+                            ) : (
+                                <div className="empty-state">
+                                    <div className="empty-icon">📈</div>
+                                    <h3>Nessun dato</h3>
+                                    <p>Aggiungi alcune transazioni per vedere le statistiche</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    <button className="fab" onClick={() => setShowModal(true)}>
+                        +
+                    </button>
+
+                    {accounts.length > 1 && (
+                        <button 
+                            className="fab" 
+                            onClick={() => setShowTransferModal(true)}
+                            style={{ 
+                                right: '90px',
+                                background: 'linear-gradient(135deg, #FF9800 0%, #F57C00 100%)'
+                            }}
+                            title="Trasferimento tra Account"
+                        >
+                            🔄
+                        </button>
+                    )}
+
+                    {showModal && (
+                        <AddTransactionModal 
+                            onClose={() => setShowModal(false)}
+                            onAdd={addTransaction}
+                            preselectedCategory={typeof showModal === 'object' ? showModal.preselectedCategory : null}
+                        />
+                    )}
+
+                    {showCategoryMenu && (
+                        <CategoryContextMenu
+                            category={showCategoryMenu.category}
+                            x={showCategoryMenu.x}
+                            y={showCategoryMenu.y}
+                            onClose={() => setShowCategoryMenu(null)}
+                            onAddMovement={() => handleAddMovementFromCategory(showCategoryMenu.categoryId)}
+                            onViewMovements={() => handleViewMovements(showCategoryMenu.categoryId)}
+                            onEditCategory={() => handleEditCategory(showCategoryMenu.categoryId)}
+                        />
+                    )}
+
+                    {showEditCategoryModal && (
+                        <EditCategoryModal
+                            category={getCategoriesFromStorage().expense.find(c => c.id === showEditCategoryModal)}
+                            onClose={() => setShowEditCategoryModal(null)}
+                            onSave={(newData) => updateCategory(showEditCategoryModal, newData)}
+                        />
+                    )}
+
+                    {showBudgetModal && (
+                        <SetBudgetModal 
+                            onClose={() => setShowBudgetModal(false)}
+                            budgets={budgets}
+                            onSetBudget={setBudget}
+                            onSetAllBudgets={setAllBudgets}
+                            transactions={transactions}
+                            settings={settings}
+                            periodStart={getPeriodDates().startDate}
+                            getPrevPeriodBudgets={() => {
+                                // Calcola il periodo precedente
+                                const { startDate } = getPeriodDates();
+                                const startDay = settings.monthStartDay || 1;
+                                const prevStart = new Date(startDate);
+                                prevStart.setMonth(prevStart.getMonth() - 1);
+                                return getBudgetsForPeriod(prevStart);
+                            }}
+                        />
+                    )}
+
+                    {showAccountModal && (
+                        <AccountModal
+                            onClose={() => setShowAccountModal(false)}
+                            onCreate={createAccount}
+                            accounts={accounts}
+                        />
+                    )}
+
+                    {showSQLiteImportModal && (
+                        <SQLiteImportModal
+                            onClose={() => setShowSQLiteImportModal(false)}
+                            onImport={handleSQLiteImport}
+                        />
+                    )}
+
+                    {showManageCategoriesModal && (
+                        <ManageCategoriesModal
+                            onClose={() => { setShowManageCategoriesModal(false); setCategoriesVersion(v => v + 1); }}
+                        />
+                    )}
+
+                    {showManageAccountsModal && (
+                        <ManageAccountsModal
+                            onClose={() => { setShowManageAccountsModal(false); setCategoriesVersion(v => v + 1); }}
+                        />
+                    )}
+
+                    {showTransferModal && (
+                        <TransferModal
+                            onClose={() => setShowTransferModal(false)}
+                            onTransfer={createTransfer}
+                            accounts={accounts}
+                            activeAccountId={activeAccountId}
+                        />
+                    )}
+
+                    {showSettingsModal && (
+                        <SettingsModal 
+                            onClose={() => setShowSettingsModal(false)}
+                            settings={settings}
+                            onSave={updateSettings}
+                            handleFileUpload={handleFileUpload}
+                            accounts={accounts}
+                            activeAccountId={activeAccountId}
+                            getActiveAccount={getActiveAccount}
+                            deleteAccount={deleteAccount}
+                            setShowSQLiteImportModal={setShowSQLiteImportModal}
+                            setShowManageCategoriesModal={setShowManageCategoriesModal}
+                            setShowManageAccountsModal={setShowManageAccountsModal}
+                            setTransactions={setTransactions}
+                        />
+                    )}
+
+                    <div className="bottom-nav">
+                        <button 
+                            className={`nav-item ${currentPage === 'accounts' ? 'active' : ''}`}
+                            onClick={() => setCurrentPage('accounts')}
+                        >
+                            <div className="nav-icon">🏦</div>
+                            <div className="nav-label">Conti</div>
+                        </button>
+                        <button 
+                            className={`nav-item ${currentPage === 'categories' ? 'active' : ''}`}
+                            onClick={() => setCurrentPage('categories')}
+                        >
+                            <div className="nav-icon">📊</div>
+                            <div className="nav-label">Categorie</div>
+                        </button>
+                        <button 
+                            className={`nav-item ${currentPage === 'home' ? 'active' : ''}`}
+                            onClick={() => setCurrentPage('home')}
+                        >
+                            <div className="nav-icon">📝</div>
+                            <div className="nav-label">Movimenti</div>
+                        </button>
+                        <button 
+                            className={`nav-item ${currentPage === 'budget' ? 'active' : ''}`}
+                            onClick={() => setCurrentPage('budget')}
+                        >
+                            <div className="nav-icon">💰</div>
+                            <div className="nav-label">Budget</div>
+                        </button>
+                        <button 
+                            className={`nav-item ${currentPage === 'stats' ? 'active' : ''}`}
+                            onClick={() => setCurrentPage('stats')}
+                        >
+                            <div className="nav-icon">📈</div>
+                            <div className="nav-label">Riepilogo</div>
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        // ============ ACCOUNTS VIEW ============
+        function AccountsView({ transactions, onAdjustBalance, onUpdateAccount }) {
+            const [accs, setAccs] = React.useState([]);
+            const [selectedAcc, setSelectedAcc] = React.useState(null);
+            const [showAdjust, setShowAdjust] = React.useState(false);
+            const [showArchived, setShowArchived] = React.useState(false);
+            const [draggedId, setDraggedId] = React.useState(null);
+            const [dragOverId, setDragOverId] = React.useState(null);
+            const touchDrag = React.useRef({ active: false, id: null });
+            const [editingAcc, setEditingAcc] = React.useState(null);
+
+            const TIPOLOGIE = [
+                { id: 'normale', label: 'Normale', icon: '🏦' },
+                { id: 'risparmio', label: 'Risparmio', icon: '🐷' },
+                { id: 'carta', label: 'Carta', icon: '💳' },
+                { id: 'contanti', label: 'Contanti', icon: '💵' },
+                { id: 'investimento', label: 'Investimento', icon: '📈' },
+                { id: 'debito', label: 'Debito', icon: '⚠️' },
+            ];
+
+            const reload = () => setAccs([...getCustomTransactionAccounts()]);
+
+            React.useEffect(() => { reload(); }, []);
+
+            // Calcola saldo per ogni conto
+            const getSaldo = (accId) => {
+                return transactions
+                    .filter(t => t.account === accId)
+                    .reduce((sum, t) => sum + (t.type === 'income' ? t.amount : -t.amount), 0);
+            };
+
+            // Saldo totale (solo conti inclusi nel totale, non archiviati)
+            const totaleSaldo = accs
+                .filter(a => !a.archived && a.includeInTotal !== false)
+                .reduce((sum, a) => sum + getSaldo(a.id), 0);
+
+            const activeAccs = accs
+                .filter(a => !a.archived)
+                .sort((a, b) => (a.order || 999) - (b.order || 999));
+            const archivedAccs = accs.filter(a => a.archived);
+
+            // Raggruppa per tipologia
+            const byTipologia = {};
+            TIPOLOGIE.forEach(t => { byTipologia[t.id] = []; });
+            activeAccs.forEach(a => {
+                const tip = a.tipologia || 'normale';
+                if (!byTipologia[tip]) byTipologia[tip] = [];
+                byTipologia[tip].push(a);
+            });
+
+            // Drag desktop
+            const handleDragStart = (e, id) => { setDraggedId(id); e.dataTransfer.effectAllowed = 'move'; };
+            const handleDragOver = (e, id) => { e.preventDefault(); setDragOverId(id); };
+            const handleDrop = (e, targetId) => {
+                e.preventDefault();
+                if (!draggedId || draggedId === targetId) { setDraggedId(null); setDragOverId(null); return; }
+                const all = getCustomTransactionAccounts();
+                const from = all.findIndex(a => a.id === draggedId);
+                const to = all.findIndex(a => a.id === targetId);
+                if (from < 0 || to < 0) return;
+                const newOrder = [...all];
+                const [removed] = newOrder.splice(from, 1);
+                newOrder.splice(to, 0, removed);
+                newOrder.forEach((a, i) => { a.order = i; });
+                saveCustomTransactionAccounts(newOrder);
+                reload();
+                setDraggedId(null); setDragOverId(null);
+            };
+            // Touch drag
+            const handleTouchStart = (e, id) => { touchDrag.current = { active: true, id }; };
+            const handleTouchMove = (e) => {
+                if (!touchDrag.current.active) return;
+                e.preventDefault();
+                const el = document.elementFromPoint(e.touches[0].clientX, e.touches[0].clientY);
+                const card = el && el.closest('[data-accid]');
+                if (card) setDragOverId(card.dataset.accid);
+            };
+            const handleTouchEnd = () => {
+                if (touchDrag.current.active && dragOverId && touchDrag.current.id !== dragOverId) {
+                    const all = getCustomTransactionAccounts();
+                    const from = all.findIndex(a => a.id === touchDrag.current.id);
+                    const to = all.findIndex(a => a.id === dragOverId);
+                    if (from >= 0 && to >= 0) {
+                        const newOrder = [...all];
+                        const [removed] = newOrder.splice(from, 1);
+                        newOrder.splice(to, 0, removed);
+                        newOrder.forEach((a, i) => { a.order = i; });
+                        saveCustomTransactionAccounts(newOrder);
+                        reload();
+                    }
+                }
+                touchDrag.current = { active: false, id: null };
+                setDraggedId(null); setDragOverId(null);
+            };
+
+            const renderAccCard = (acc) => {
+                const saldo = getSaldo(acc.id);
+                const isDragging = draggedId === acc.id;
+                const isOver = dragOverId === acc.id && !isDragging;
+                return (
+                    <div
+                        key={acc.id}
+                        data-accid={acc.id}
+                        draggable="true"
+                        onDragStart={e => handleDragStart(e, acc.id)}
+                        onDragOver={e => handleDragOver(e, acc.id)}
+                        onDrop={e => handleDrop(e, acc.id)}
+                        onDragEnd={() => { setDraggedId(null); setDragOverId(null); }}
+                        onTouchStart={e => handleTouchStart(e, acc.id)}
+                        onTouchMove={handleTouchMove}
+                        onTouchEnd={handleTouchEnd}
+                        onClick={() => setSelectedAcc(acc)}
+                        style={{
+                            background: 'white',
+                            borderRadius: '14px',
+                            padding: '14px 16px',
+                            marginBottom: '10px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '14px',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.07)',
+                            border: isOver ? '2px dashed #667eea' : '2px solid transparent',
+                            transform: isOver ? 'scale(1.02)' : isDragging ? 'scale(0.97)' : 'scale(1)',
+                            opacity: isDragging ? 0.4 : 1,
+                            cursor: 'grab',
+                            transition: 'transform 0.15s, opacity 0.15s'
+                        }}
+                    >
+                        <div style={{
+                            width: '46px', height: '46px', borderRadius: '12px',
+                            background: acc.color || '#667eea',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: '22px', flexShrink: 0
+                        }}>{acc.icon || '🏦'}</div>
+                        <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 'bold', fontSize: '15px' }}>{acc.name}</div>
+                            <div style={{ fontSize: '11px', color: '#999', marginTop: '2px' }}>
+                                {TIPOLOGIE.find(t => t.id === (acc.tipologia || 'normale'))?.label || 'Normale'}
+                            </div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontWeight: 'bold', fontSize: '16px', color: saldo >= 0 ? '#4CAF50' : '#f44336' }}>
+                                {saldo >= 0 ? '' : '-'}€ {Math.abs(saldo).toFixed(2)}
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            // Modal dettaglio conto
+            const AccDetailModal = () => {
+                const [adjustAmt, setAdjustAmt] = React.useState('');
+                const [adjustNote, setAdjustNote] = React.useState('');
+                const [tab, setTab] = React.useState('detail'); // detail | adjust | edit
+                const [editName, setEditName] = React.useState(selectedAcc?.name || '');
+                const [editTip, setEditTip] = React.useState(selectedAcc?.tipologia || 'normale');
+                const [editInclude, setEditInclude] = React.useState(selectedAcc?.includeInTotal !== false);
+                const saldo = getSaldo(selectedAcc?.id);
+                const accTx = transactions.filter(t => t.account === selectedAcc?.id)
+                    .sort((a, b) => new Date(b.date) - new Date(a.date))
+                    .slice(0, 20);
+
+                const saveEdit = () => {
+                    const all = getCustomTransactionAccounts();
+                    const updated = all.map(a => a.id === selectedAcc.id
+                        ? { ...a, name: editName, tipologia: editTip, includeInTotal: editInclude }
+                        : a
+                    );
+                    saveCustomTransactionAccounts(updated);
+                    reload();
+                    setSelectedAcc(null);
+                };
+
+                const archiveAcc = () => {
+                    if (!window.confirm(`Archiviare il conto "${selectedAcc.name}"?`)) return;
+                    const all = getCustomTransactionAccounts();
+                    const updated = all.map(a => a.id === selectedAcc.id ? { ...a, archived: true } : a);
+                    saveCustomTransactionAccounts(updated);
+                    reload();
+                    setSelectedAcc(null);
+                };
+
+                const doAdjust = () => {
+                    const amt = parseFloat(adjustAmt);
+                    if (isNaN(amt) || amt === 0) return;
+                    const diff = amt - saldo;
+                    onAdjustBalance(selectedAcc.id, diff, adjustNote || '⚖️ Aggiustamento saldo');
+                    setSelectedAcc(null);
+                };
+
+                return (
+                    <div className="modal" onClick={() => setSelectedAcc(null)}>
+                        <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxHeight: '90vh', overflow: 'auto' }}>
+                            {/* Header colorato */}
+                            <div style={{
+                                background: selectedAcc?.color || '#667eea',
+                                borderRadius: '12px 12px 0 0',
+                                padding: '20px',
+                                display: 'flex', alignItems: 'center', gap: '14px',
+                                marginTop: '-1px'
+                            }}>
+                                <div style={{ fontSize: '32px' }}>{selectedAcc?.icon || '🏦'}</div>
+                                <div style={{ flex: 1 }}>
+                                    <div style={{ color: 'white', fontWeight: 'bold', fontSize: '20px' }}>{selectedAcc?.name}</div>
+                                    <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px' }}>Saldo del conto</div>
+                                    <div style={{ color: 'white', fontWeight: 'bold', fontSize: '22px' }}>
+                                        {saldo >= 0 ? '' : '-'}€ {Math.abs(saldo).toFixed(2)}
+                                    </div>
+                                </div>
+                                <button onClick={() => setSelectedAcc(null)} style={{ background: 'rgba(255,255,255,0.3)', border: 'none', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer', color: 'white', fontSize: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+                            </div>
+
+                            {/* Tab bar */}
+                            <div style={{ display: 'flex', borderBottom: '1px solid #eee' }}>
+                                {[['detail','📋 Dettaglio'],['adjust','⚖️ Bilancio'],['edit','✏️ Modifica']].map(([id, label]) => (
+                                    <button key={id} onClick={() => setTab(id)} style={{
+                                        flex: 1, padding: '12px 0', border: 'none', background: 'none',
+                                        fontWeight: tab === id ? 'bold' : 'normal',
+                                        color: tab === id ? '#667eea' : '#666',
+                                        borderBottom: tab === id ? '2px solid #667eea' : '2px solid transparent',
+                                        cursor: 'pointer', fontSize: '12px'
+                                    }}>{label}</button>
+                                ))}
+                            </div>
+
+                            <div style={{ padding: '16px' }}>
+                                {tab === 'detail' && (
+                                    <div>
+                                        <div style={{ fontSize: '13px', color: '#666', marginBottom: '12px' }}>Ultimi movimenti</div>
+                                        {accTx.length === 0 && <div style={{ color: '#999', textAlign: 'center', padding: '20px' }}>Nessun movimento</div>}
+                                        {accTx.map(t => {
+                                            const cats = getCategoriesFromStorage();
+                                            const cat = (cats[t.type] || []).find(c => c.id === t.category) || { name: 'Altro', icon: '📦', color: '#999' };
+                                            return (
+                                                <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid #f5f5f5' }}>
+                                                    <div style={{ width: '34px', height: '34px', borderRadius: '8px', background: cat.color + '20', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>{cat.icon}</div>
+                                                    <div style={{ flex: 1 }}>
+                                                        <div style={{ fontSize: '13px', fontWeight: '500' }}>{cat.name}</div>
+                                                        <div style={{ fontSize: '11px', color: '#999' }}>{new Date(t.date).toLocaleDateString('it-IT')}{t.note ? ' · ' + t.note : ''}</div>
+                                                    </div>
+                                                    <div style={{ fontWeight: 'bold', color: t.type === 'income' ? '#4CAF50' : '#f44336', fontSize: '14px' }}>
+                                                        {t.type === 'income' ? '+' : '-'}€{t.amount.toFixed(2)}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+
+                                {tab === 'adjust' && (
+                                    <div>
+                                        <div style={{ background: '#f3f4f6', borderRadius: '10px', padding: '14px', marginBottom: '16px', textAlign: 'center' }}>
+                                            <div style={{ fontSize: '12px', color: '#666' }}>Saldo attuale</div>
+                                            <div style={{ fontSize: '22px', fontWeight: 'bold', color: saldo >= 0 ? '#4CAF50' : '#f44336' }}>€ {saldo.toFixed(2)}</div>
+                                        </div>
+                                        <div style={{ marginBottom: '12px' }}>
+                                            <label style={{ fontSize: '13px', color: '#666', display: 'block', marginBottom: '6px' }}>Nuovo saldo corretto</label>
+                                            <input
+                                                type="number"
+                                                step="0.01"
+                                                className="form-input"
+                                                value={adjustAmt}
+                                                onChange={e => setAdjustAmt(e.target.value)}
+                                                placeholder={saldo.toFixed(2)}
+                                            />
+                                        </div>
+                                        <div style={{ marginBottom: '16px' }}>
+                                            <label style={{ fontSize: '13px', color: '#666', display: 'block', marginBottom: '6px' }}>Nota (opzionale)</label>
+                                            <input type="text" className="form-input" value={adjustNote} onChange={e => setAdjustNote(e.target.value)} placeholder="es. Controllo estratto conto" />
+                                        </div>
+                                        {adjustAmt && !isNaN(parseFloat(adjustAmt)) && (
+                                            <div style={{ background: '#e8f5e9', borderRadius: '8px', padding: '10px', marginBottom: '12px', fontSize: '13px', color: '#2e7d32', textAlign: 'center' }}>
+                                                Verrà creato un movimento di{' '}
+                                                <strong>{parseFloat(adjustAmt) - saldo >= 0 ? '+' : ''}€{(parseFloat(adjustAmt) - saldo).toFixed(2)}</strong>
+                                            </div>
+                                        )}
+                                        <button onClick={doAdjust} style={{ width: '100%', padding: '12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px' }}>
+                                            ⚖️ Applica correzione
+                                        </button>
+                                    </div>
+                                )}
+
+                                {tab === 'edit' && (
+                                    <div>
+                                        <div style={{ marginBottom: '12px' }}>
+                                            <label style={{ fontSize: '13px', color: '#666', display: 'block', marginBottom: '6px' }}>Nome conto</label>
+                                            <input type="text" className="form-input" value={editName} onChange={e => setEditName(e.target.value)} />
+                                        </div>
+                                        <div style={{ marginBottom: '12px' }}>
+                                            <label style={{ fontSize: '13px', color: '#666', display: 'block', marginBottom: '8px' }}>Tipologia</label>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                                                {TIPOLOGIE.map(tip => (
+                                                    <button key={tip.id} type="button" onClick={() => setEditTip(tip.id)} style={{
+                                                        padding: '8px', border: '2px solid ' + (editTip === tip.id ? '#667eea' : '#e0e0e0'),
+                                                        borderRadius: '8px', background: editTip === tip.id ? '#667eea15' : 'white',
+                                                        cursor: 'pointer', fontSize: '12px', color: editTip === tip.id ? '#667eea' : '#333',
+                                                        fontWeight: editTip === tip.id ? 'bold' : 'normal'
+                                                    }}>
+                                                        {tip.icon} {tip.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderTop: '1px solid #eee', borderBottom: '1px solid #eee', marginBottom: '16px' }}>
+                                            <span style={{ fontSize: '14px' }}>Includi nel saldo totale</span>
+                                            <button type="button" onClick={() => setEditInclude(!editInclude)} style={{
+                                                width: '48px', height: '26px', borderRadius: '13px', border: 'none',
+                                                background: editInclude ? '#667eea' : '#ccc', cursor: 'pointer', position: 'relative', transition: 'background 0.2s'
+                                            }}>
+                                                <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'white', position: 'absolute', top: '3px', left: editInclude ? '25px' : '3px', transition: 'left 0.2s' }} />
+                                            </button>
+                                        </div>
+                                        <button onClick={saveEdit} style={{ width: '100%', padding: '12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', marginBottom: '10px', fontSize: '15px' }}>
+                                            💾 Salva modifiche
+                                        </button>
+                                        <button onClick={archiveAcc} style={{ width: '100%', padding: '10px', background: 'white', color: '#FF9800', border: '2px solid #FF9800', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>
+                                            📦 Archivia conto
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            return (
+                <div style={{ padding: '10px', paddingBottom: '80px' }}>
+                    {/* Saldo totale */}
+                    <div style={{
+                        background: 'linear-gradient(135deg, #667eea, #764ba2)',
+                        borderRadius: '16px', padding: '20px', marginBottom: '16px', color: 'white', textAlign: 'center'
+                    }}>
+                        <div style={{ fontSize: '13px', opacity: 0.85 }}>Saldo Totale Conti</div>
+                        <div style={{ fontSize: '32px', fontWeight: 'bold' }}>
+                            {totaleSaldo >= 0 ? '' : '-'}€ {Math.abs(totaleSaldo).toFixed(2)}
+                        </div>
+                        <div style={{ fontSize: '11px', opacity: 0.7, marginTop: '4px' }}>
+                            {activeAccs.filter(a => a.includeInTotal !== false).length} conti inclusi
+                        </div>
+                    </div>
+
+                    {/* Lista per tipologia */}
+                    {TIPOLOGIE.map(tip => {
+                        const tipAccs = byTipologia[tip.id] || [];
+                        if (tipAccs.length === 0) return null;
+                        return (
+                            <div key={tip.id} style={{ marginBottom: '16px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#999', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px', paddingLeft: '4px' }}>
+                                    {tip.icon} {tip.label}
+                                </div>
+                                {tipAccs.map(acc => renderAccCard(acc))}
+                            </div>
+                        );
+                    })}
+
+                    {activeAccs.length === 0 && (
+                        <div style={{ textAlign: 'center', padding: '40px 20px', color: '#999' }}>
+                            <div style={{ fontSize: '40px', marginBottom: '10px' }}>🏦</div>
+                            <div>Nessun conto trovato</div>
+                            <div style={{ fontSize: '12px', marginTop: '8px' }}>Importa un CSV o crea un conto dalle impostazioni</div>
+                        </div>
+                    )}
+
+                    {/* Conti archiviati */}
+                    {archivedAccs.length > 0 && (
+                        <div style={{ marginTop: '10px' }}>
+                            <button onClick={() => setShowArchived(!showArchived)} style={{
+                                width: '100%', padding: '10px', background: '#f5f5f5', border: '1px solid #ddd',
+                                borderRadius: '10px', cursor: 'pointer', fontSize: '13px', color: '#666',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+                            }}>
+                                📦 {archivedAccs.length} {archivedAccs.length === 1 ? 'conto archiviato' : 'conti archiviati'}
+                                <span style={{ fontSize: '10px' }}>{showArchived ? '▲' : '▼'}</span>
+                            </button>
+                            {showArchived && archivedAccs.map(acc => {
+                                const saldo = getSaldo(acc.id);
+                                return (
+                                    <div key={acc.id} style={{ background: '#f9f9f9', borderRadius: '12px', padding: '12px 16px', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '12px', opacity: 0.6, border: '1px dashed #ccc' }}>
+                                        <div style={{ fontSize: '22px' }}>{acc.icon || '🏦'}</div>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{acc.name}</div>
+                                        </div>
+                                        <div style={{ fontSize: '14px', color: saldo >= 0 ? '#4CAF50' : '#f44336' }}>€{saldo.toFixed(2)}</div>
+                                        <button onClick={() => {
+                                            const all = getCustomTransactionAccounts();
+                                            const updated = all.map(a => a.id === acc.id ? { ...a, archived: false } : a);
+                                            saveCustomTransactionAccounts(updated);
+                                            reload();
+                                        }} style={{ padding: '4px 10px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '12px' }}>
+                                            📤 Ripristina
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    <div style={{ textAlign: 'center', fontSize: '11px', color: '#bbb', marginTop: '12px' }}>
+                        Tocca un conto per dettagli · Trascina per riordinare
+                    </div>
+
+                    {selectedAcc && <AccDetailModal />}
+                </div>
+            );
+        }
+
+        function TransactionList({ transactions, onDelete }) {
+            const getCategoryInfo = (type, categoryId) => {
+                const cats = getCategoriesFromStorage();
+                const cat = (cats[type] || []).find(c => c.id === categoryId);
+                if (cat) return cat;
+                // Categoria non trovata: mostra il nome dell'id importato in modo leggibile
+                if (categoryId && categoryId.startsWith('imported_cat_')) {
+                    return { name: categoryId.replace('imported_cat_', 'Cat.'), icon: '📦', color: '#B0BEC5' };
+                }
+                return { name: categoryId || 'Sconosciuto', icon: '❓', color: '#999' };
+            };
+
+            const getAccountInfo = (accountId) => {
+                const allAccs = getAccountsFilter();
+                const acc = allAccs.find(a => a.id === accountId);
+                return acc || { name: accountId || 'Sconosciuto', icon: '❓' };
+            };
+
+            return (
+                <ul className="transaction-list">
+                    {transactions.map(transaction => {
+                        const category = getCategoryInfo(transaction.type, transaction.category);
+                        const account = getAccountInfo(transaction.account || 'cash');
+                        return (
+                            <li key={transaction.id} className="transaction-item">
+                                <div style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
+                                    <div 
+                                        className="transaction-icon"
+                                        style={{ backgroundColor: category.color + '20' }}
+                                    >
+                                        {category.icon}
+                                    </div>
+                                    <div className="transaction-info">
+                                        <div className="transaction-category">{category.name}</div>
+                                        <div className="transaction-date">
+                                            {new Date(transaction.date).toLocaleDateString('it-IT')} • {account.icon} {account.name}
+                                        </div>
+                                        {transaction.note && (
+                                            <div className="transaction-date">{transaction.note}</div>
+                                        )}
+                                        {transaction.tags && transaction.tags.length > 0 && (
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '3px' }}>
+                                                {transaction.tags.map(tagId => {
+                                                    const tag = getTagsFromStorage().find(t => t.id === tagId);
+                                                    if (!tag) return null;
+                                                    return (
+                                                        <span key={tagId} style={{
+                                                            fontSize: '10px', padding: '1px 7px',
+                                                            borderRadius: '10px', background: tag.color + '25',
+                                                            color: tag.color, border: '1px solid ' + tag.color + '60',
+                                                            fontWeight: 'bold'
+                                                        }}>#{tag.name}</span>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className={`transaction-amount ${transaction.type}`}>
+                                        {transaction.type === 'income' ? '+' : '-'}€ {transaction.amount.toFixed(2)}
+                                    </div>
+                                    <button 
+                                        onClick={() => onDelete(transaction.id)}
+                                        style={{
+                                            background: 'none',
+                                            border: 'none',
+                                            color: '#f44336',
+                                            cursor: 'pointer',
+                                            fontSize: '12px',
+                                            marginTop: '5px'
+                                        }}
+                                    >
+                                        Elimina
+                                    </button>
+                                </div>
+                            </li>
+                        );
+                    })}
+                </ul>
+            );
+        }
+
+        function AddTransactionModal({ onClose, onAdd, preselectedCategory }) {
+            const [type, setType] = useState('expense');
+            const [amount, setAmount] = useState('');
+            const [category, setCategory] = useState(preselectedCategory || '');
+            const [account, setAccount] = useState('cash');
+            const [note, setNote] = useState('');
+            const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+            const [selectedTags, setSelectedTags] = useState([]);
+            const [newTagInput, setNewTagInput] = useState('');
+            const allAccounts = getAccountsFilter().filter(a => a.id !== 'all');
+            const allCategories = getCategoriesFromStorage();
+            const allTags = getTagsFromStorage();
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (!amount || !category) return;
+
+                const transaction = {
+                    id: Date.now(),
+                    type,
+                    amount: parseFloat(amount),
+                    category,
+                    account,
+                    note,
+                    date: new Date(date).toISOString(),
+                    tags: selectedTags
+                };
+
+                onAdd(transaction);
+            };
+
+            const toggleTag = (tagId) => {
+                setSelectedTags(prev =>
+                    prev.includes(tagId) ? prev.filter(t => t !== tagId) : [...prev, tagId]
+                );
+            };
+
+            const handleAddNewTag = () => {
+                if (!newTagInput.trim()) return;
+                const tagId = getOrCreateTag(newTagInput.trim());
+                if (tagId && !selectedTags.includes(tagId)) {
+                    setSelectedTags(prev => [...prev, tagId]);
+                }
+                setNewTagInput('');
+            };
+
+            return (
+                <div className="modal" onClick={onClose}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h2 className="modal-title">Nuova Transazione</h2>
+                            <button className="close-btn" onClick={onClose}>×</button>
+                        </div>
+
+                        <form onSubmit={handleSubmit}>
+                            <div className="type-selector">
+                                <button 
+                                    type="button"
+                                    className={`type-btn expense ${type === 'expense' ? 'active' : ''}`}
+                                    onClick={() => { setType('expense'); setCategory(''); }}
+                                >
+                                    Uscita
+                                </button>
+                                <button 
+                                    type="button"
+                                    className={`type-btn income ${type === 'income' ? 'active' : ''}`}
+                                    onClick={() => { setType('income'); setCategory(''); }}
+                                >
+                                    Entrata
+                                </button>
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Importo (€)</label>
+                                <input 
+                                    type="number" 
+                                    step="0.01"
+                                    className="form-input"
+                                    value={amount}
+                                    onChange={e => setAmount(e.target.value)}
+                                    placeholder="0.00"
+                                    required
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Conto</label>
+                                <select 
+                                    className="form-input"
+                                    value={account}
+                                    onChange={e => setAccount(e.target.value)}
+                                    required
+                                >
+                                    {allAccounts.map(acc => (
+                                        <option key={acc.id} value={acc.id}>
+                                            {acc.icon} {acc.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Categoria</label>
+                                <div className="category-grid">
+                                    {(allCategories[type] || []).map(cat => (
+                                        <button
+                                            key={cat.id}
+                                            type="button"
+                                            className={`category-btn ${category === cat.id ? 'active' : ''}`}
+                                            onClick={() => setCategory(cat.id)}
+                                        >
+                                            <div className="category-icon">{cat.icon}</div>
+                                            <div className="category-name">{cat.name}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Data</label>
+                                <input 
+                                    type="date"
+                                    className="form-input"
+                                    value={date}
+                                    onChange={e => setDate(e.target.value)}
+                                    required
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Note (opzionale)</label>
+                                <input 
+                                    type="text"
+                                    className="form-input"
+                                    value={note}
+                                    onChange={e => setNote(e.target.value)}
+                                    placeholder="Aggiungi una nota..."
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Tag (opzionale)</label>
+                                {/* Tag esistenti */}
+                                {allTags.length > 0 && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
+                                        {allTags.map(tag => (
+                                            <button
+                                                key={tag.id}
+                                                type="button"
+                                                onClick={() => toggleTag(tag.id)}
+                                                style={{
+                                                    padding: '4px 10px',
+                                                    borderRadius: '20px',
+                                                    border: '2px solid ' + tag.color,
+                                                    background: selectedTags.includes(tag.id) ? tag.color : 'transparent',
+                                                    color: selectedTags.includes(tag.id) ? 'white' : tag.color,
+                                                    fontSize: '12px',
+                                                    cursor: 'pointer',
+                                                    fontWeight: 'bold'
+                                                }}
+                                            >
+                                                # {tag.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                                {/* Crea nuovo tag */}
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        value={newTagInput}
+                                        onChange={e => setNewTagInput(e.target.value)}
+                                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddNewTag(); } }}
+                                        placeholder="Nuovo tag..."
+                                        style={{ flex: 1, marginBottom: 0 }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={handleAddNewTag}
+                                        style={{ padding: '8px 14px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', whiteSpace: 'nowrap' }}
+                                    >+ Aggiungi</button>
+                                </div>
+                            </div>
+
+                            <button type="submit" className="submit-btn">
+                                Aggiungi Transazione
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            );
+        }
+
+        function CategoriesView({ expenses, budgets, onCategoryClick }) {
+            const [categoryOrder, setCategoryOrder] = React.useState([]);
+            const [draggedItem, setDraggedItem] = React.useState(null);
+            const [dragOverItem, setDragOverItem] = React.useState(null);
+            const [showArchived, setShowArchived] = React.useState(false);
+            const [cats, setCats] = React.useState(getCategoriesFromStorage());
+            // Touch drag state
+            const touchDrag = React.useRef({ active: false, id: null, startY: 0, currentY: 0 });
+
+            React.useEffect(() => {
+                setCats(getCategoriesFromStorage());
+            }, []);
+
+            React.useEffect(() => {
+                const savedOrder = localStorage.getItem('categoryOrder');
+                if (savedOrder) {
+                    setCategoryOrder(JSON.parse(savedOrder));
+                } else {
+                    setCategoryOrder(cats.expense.map(c => c.id));
+                }
+            }, []);
+
+            React.useEffect(() => {
+                if (categoryOrder.length > 0) {
+                    localStorage.setItem('categoryOrder', JSON.stringify(categoryOrder));
+                }
+            }, [categoryOrder]);
+
+            const monthlyExpenses = expenses;
+            const totalExpense = Object.values(monthlyExpenses).reduce((acc, val) => acc + val, 0);
+            const totalBudget = Object.values(budgets).reduce((acc, val) => acc + val, 0);
+
+            const activeCats = cats.expense.filter(c => !c.archived);
+            const archivedCats = cats.expense.filter(c => c.archived);
+
+            // Ordina le categorie attive
+            const orderedCategories = categoryOrder
+                .map(id => activeCats.find(c => c.id === id))
+                .filter(Boolean);
+            activeCats.forEach(cat => {
+                if (!categoryOrder.includes(cat.id)) orderedCategories.push(cat);
+            });
+
+            // Archivia/ripristina categoria
+            const toggleArchive = (catId) => {
+                const updated = getCategoriesFromStorage();
+                updated.expense = updated.expense.map(c =>
+                    c.id === catId ? { ...c, archived: !c.archived } : c
+                );
+                saveCategoriestoStorage(updated);
+                setCats(getCategoriesFromStorage());
+            };
+
+            // Desktop drag
+            const handleDragStart = (e, categoryId) => {
+                setDraggedItem(categoryId);
+                e.dataTransfer.effectAllowed = 'move';
+            };
+            const handleDragOver = (e, targetId) => {
+                e.preventDefault();
+                setDragOverItem(targetId);
+            };
+            const handleDrop = (e, targetId) => {
+                e.preventDefault();
+                if (!draggedItem || draggedItem === targetId) { setDraggedItem(null); setDragOverItem(null); return; }
+                const newOrder = [...(categoryOrder.length > 0 ? categoryOrder : orderedCategories.map(c => c.id))];
+                const from = newOrder.indexOf(draggedItem);
+                const to = newOrder.indexOf(targetId);
+                if (from < 0 || to < 0) { setDraggedItem(null); setDragOverItem(null); return; }
+                newOrder.splice(from, 1);
+                newOrder.splice(to, 0, draggedItem);
+                setCategoryOrder(newOrder);
+                setDraggedItem(null);
+                setDragOverItem(null);
+            };
+
+            // Touch drag (mobile)
+            const handleTouchStart = (e, catId) => {
+                touchDrag.current = { active: true, id: catId, startY: e.touches[0].clientY };
+            };
+            const handleTouchMove = (e) => {
+                if (!touchDrag.current.active) return;
+                e.preventDefault();
+                touchDrag.current.currentY = e.touches[0].clientY;
+                // Trova elemento sotto il tocco
+                const el = document.elementFromPoint(e.touches[0].clientX, e.touches[0].clientY);
+                const card = el && el.closest('[data-catid]');
+                if (card) setDragOverItem(card.dataset.catid);
+            };
+            const handleTouchEnd = () => {
+                if (!touchDrag.current.active) return;
+                const from = touchDrag.current.id;
+                const to = dragOverItem;
+                if (from && to && from !== to) {
+                    const newOrder = [...(categoryOrder.length > 0 ? categoryOrder : orderedCategories.map(c => c.id))];
+                    const fi = newOrder.indexOf(from);
+                    const ti = newOrder.indexOf(to);
+                    if (fi >= 0 && ti >= 0) {
+                        newOrder.splice(fi, 1);
+                        newOrder.splice(ti, 0, from);
+                        setCategoryOrder(newOrder);
+                    }
+                }
+                touchDrag.current = { active: false, id: null };
+                setDraggedItem(null);
+                setDragOverItem(null);
+            };
+
+            return (
+                <div className="dashboard-container">
+                    <div className="chart-center-container">
+                        <canvas id="categoryChart" style={{ maxHeight: '280px' }}></canvas>
+                        <div className="chart-center-info">
+                            <div className="chart-center-label">Spese</div>
+                            <div className="chart-center-amount">{totalExpense.toFixed(2)} €</div>
+                            <div className="chart-center-budget">{totalBudget.toFixed(0)} €</div>
+                        </div>
+                    </div>
+
+                    {/* Categorie attive */}
+                    <div className="categories-grid">
+                        {orderedCategories.map(category => {
+                            const amount = monthlyExpenses[category.id] || 0;
+                            const budget = budgets[category.id] || 0;
+                            const exceeded = budget > 0 && amount > budget;
+                            const remaining = budget - amount;
+                            const isDragging = draggedItem === category.id;
+                            const isOver = dragOverItem === category.id && !isDragging;
+
+                            return (
+                                <div
+                                    key={category.id}
+                                    data-catid={category.id}
+                                    className="category-card"
+                                    draggable="true"
+                                    onDragStart={(e) => handleDragStart(e, category.id)}
+                                    onDragOver={(e) => handleDragOver(e, category.id)}
+                                    onDrop={(e) => handleDrop(e, category.id)}
+                                    onDragEnd={() => { setDraggedItem(null); setDragOverItem(null); }}
+                                    onTouchStart={(e) => handleTouchStart(e, category.id)}
+                                    onTouchMove={handleTouchMove}
+                                    onTouchEnd={handleTouchEnd}
+                                    onClick={(e) => onCategoryClick && onCategoryClick(category, e)}
+                                    style={{
+                                        opacity: isDragging ? 0.3 : 1,
+                                        transform: isOver ? 'scale(1.06)' : 'scale(1)',
+                                        border: isOver ? '2px dashed #667eea' : '2px solid transparent',
+                                        cursor: 'grab',
+                                        transition: 'transform 0.15s, border 0.15s, opacity 0.15s',
+                                        position: 'relative'
+                                    }}
+                                >
+                                    {/* Tasto archivia (longpress su mobile, hover su desktop) */}
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); toggleArchive(category.id); }}
+                                        title="Archivia categoria"
+                                        style={{
+                                            position: 'absolute', top: '4px', right: '4px',
+                                            background: 'rgba(0,0,0,0.12)', border: 'none',
+                                            borderRadius: '50%', width: '20px', height: '20px',
+                                            fontSize: '10px', cursor: 'pointer', lineHeight: '20px',
+                                            padding: 0, color: '#555', display: 'flex',
+                                            alignItems: 'center', justifyContent: 'center'
+                                        }}
+                                    >📥</button>
+
+                                    <div className="category-circle" style={{ background: category.color }}>
+                                        {category.icon}
+                                    </div>
+                                    <div className="category-amount" style={{ color: exceeded ? '#f44336' : category.color }}>
+                                        {amount.toFixed(0)} €
+                                    </div>
+                                    <div className="category-name-small">{category.name}</div>
+                                    {budget > 0 && (
+                                        <div style={{ fontSize: exceeded ? '10px' : '9px', color: exceeded ? '#f44336' : '#999', fontWeight: exceeded ? 'bold' : 'normal', marginTop: '2px' }}>
+                                            {exceeded
+                                                ? <span style={{ color: '#f44336', fontWeight: 'bold' }}>+{Math.abs(remaining).toFixed(0)} €</span>
+                                                : <span>{budget.toFixed(0)} €</span>
+                                            }
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* Sezione categorie archiviate */}
+                    {archivedCats.length > 0 && (
+                        <div style={{ marginTop: '20px', padding: '0 5px' }}>
+                            <button
+                                onClick={() => setShowArchived(!showArchived)}
+                                style={{
+                                    width: '100%', padding: '10px', background: '#f5f5f5',
+                                    border: '1px solid #ddd', borderRadius: '10px',
+                                    cursor: 'pointer', fontSize: '13px', color: '#666',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+                                }}
+                            >
+                                📦 {archivedCats.length} {archivedCats.length === 1 ? 'categoria archiviata' : 'categorie archiviate'}
+                                <span style={{ fontSize: '10px' }}>{showArchived ? '▲' : '▼'}</span>
+                            </button>
+
+                            {showArchived && (
+                                <div style={{ marginTop: '10px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: '10px' }}>
+                                    {archivedCats.map(category => (
+                                        <div key={category.id} style={{
+                                            background: '#f9f9f9', borderRadius: '12px', padding: '10px 5px',
+                                            textAlign: 'center', border: '1px dashed #ccc', position: 'relative', opacity: 0.7
+                                        }}>
+                                            <button
+                                                onClick={() => toggleArchive(category.id)}
+                                                title="Ripristina categoria"
+                                                style={{
+                                                    position: 'absolute', top: '4px', right: '4px',
+                                                    background: 'rgba(102,126,234,0.15)', border: 'none',
+                                                    borderRadius: '50%', width: '20px', height: '20px',
+                                                    fontSize: '10px', cursor: 'pointer', lineHeight: '20px',
+                                                    padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                                }}
+                                            >📤</button>
+                                            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#ddd', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', margin: '0 auto 6px' }}>
+                                                {category.icon}
+                                            </div>
+                                            <div style={{ fontSize: '11px', color: '#999' }}>{category.name}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    <div style={{ textAlign: 'center', fontSize: '11px', color: '#bbb', marginTop: '10px', padding: '5px' }}>
+                        📥 archivia · trascina per riordinare
+                    </div>
+                </div>
+            );
+        }
+
+        function CategoryContextMenu({ category, x, y, onClose, onAddMovement, onViewMovements, onEditCategory }) {
+            React.useEffect(() => {
+                const handleClickOutside = () => onClose();
+                setTimeout(() => document.addEventListener('click', handleClickOutside), 0);
+                return () => document.removeEventListener('click', handleClickOutside);
+            }, []);
+
+            return (
+                <div 
+                    style={{
+                        position: 'fixed',
+                        top: y + 'px',
+                        left: x + 'px',
+                        transform: 'translateX(-50%)',
+                        background: 'white',
+                        borderRadius: '12px',
+                        boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
+                        zIndex: 10000,
+                        minWidth: '200px',
+                        overflow: 'hidden',
+                        animation: 'menuAppear 0.2s ease-out'
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <div style={{
+                        padding: '12px 16px',
+                        borderBottom: '1px solid #f0f0f0',
+                        background: category.color + '20',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px'
+                    }}>
+                        <span style={{ fontSize: '24px' }}>{category.icon}</span>
+                        <span style={{ fontWeight: 'bold', color: category.color }}>{category.name}</span>
+                    </div>
+                    
+                    <div style={{ padding: '8px 0' }}>
+                        <button
+                            onClick={onAddMovement}
+                            style={{
+                                width: '100%',
+                                padding: '12px 16px',
+                                border: 'none',
+                                background: 'none',
+                                textAlign: 'left',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '12px',
+                                fontSize: '14px',
+                                transition: 'background 0.2s'
+                            }}
+                            onMouseOver={(e) => e.currentTarget.style.background = '#f5f5f5'}
+                            onMouseOut={(e) => e.currentTarget.style.background = 'none'}
+                        >
+                            <span style={{ fontSize: '18px' }}>➕</span>
+                            <span>Aggiungi movimento</span>
+                        </button>
+                        
+                        <button
+                            onClick={onViewMovements}
+                            style={{
+                                width: '100%',
+                                padding: '12px 16px',
+                                border: 'none',
+                                background: 'none',
+                                textAlign: 'left',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '12px',
+                                fontSize: '14px',
+                                transition: 'background 0.2s'
+                            }}
+                            onMouseOver={(e) => e.currentTarget.style.background = '#f5f5f5'}
+                            onMouseOut={(e) => e.currentTarget.style.background = 'none'}
+                        >
+                            <span style={{ fontSize: '18px' }}>📋</span>
+                            <span>Vedi movimenti</span>
+                        </button>
+                        
+                        <button
+                            onClick={onEditCategory}
+                            style={{
+                                width: '100%',
+                                padding: '12px 16px',
+                                border: 'none',
+                                background: 'none',
+                                textAlign: 'left',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '12px',
+                                fontSize: '14px',
+                                transition: 'background 0.2s'
+                            }}
+                            onMouseOver={(e) => e.currentTarget.style.background = '#f5f5f5'}
+                            onMouseOut={(e) => e.currentTarget.style.background = 'none'}
+                        >
+                            <span style={{ fontSize: '18px' }}>✏️</span>
+                            <span>Modifica categoria</span>
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        function EditCategoryModal({ category, onClose, onSave }) {
+            const [name, setName] = React.useState(category.name);
+            const [icon, setIcon] = React.useState(category.icon);
+            const [color, setColor] = React.useState(category.color);
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onSave({ name, icon, color });
+            };
+
+            return (
+                <div className="modal" onClick={onClose}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h2 className="modal-title">✏️ Modifica Categoria</h2>
+                            <button className="close-btn" onClick={onClose}>×</button>
+                        </div>
+
+                        <form onSubmit={handleSubmit}>
+                            <div className="form-group">
+                                <label className="form-label">Nome</label>
+                                <input 
+                                    type="text"
+                                    className="form-input"
+                                    value={name}
+                                    onChange={e => setName(e.target.value)}
+                                    placeholder="Nome categoria"
+                                    required
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Icona (Emoji)</label>
+                                <input 
+                                    type="text"
+                                    className="form-input"
+                                    value={icon}
+                                    onChange={e => setIcon(e.target.value)}
+                                    placeholder="🛒"
+                                    maxLength="2"
+                                    style={{ fontSize: '24px', textAlign: 'center' }}
+                                    required
+                                />
+                                <div style={{ fontSize: '11px', color: '#999', marginTop: '5px' }}>
+                                    Incolla un'emoji da usare come icona
+                                </div>
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Colore</label>
+                                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                                    <input 
+                                        type="color"
+                                        value={color}
+                                        onChange={e => setColor(e.target.value)}
+                                        style={{
+                                            width: '60px',
+                                            height: '40px',
+                                            border: '2px solid #e0e0e0',
+                                            borderRadius: '8px',
+                                            cursor: 'pointer'
+                                        }}
+                                    />
+                                    <input 
+                                        type="text"
+                                        className="form-input"
+                                        value={color}
+                                        onChange={e => setColor(e.target.value)}
+                                        placeholder="#FF6B6B"
+                                        style={{ flex: 1 }}
+                                    />
+                                </div>
+                            </div>
+
+                            <div style={{
+                                padding: '20px',
+                                background: color + '20',
+                                borderRadius: '12px',
+                                marginBottom: '20px',
+                                textAlign: 'center'
+                            }}>
+                                <div style={{ fontSize: '11px', color: '#666', marginBottom: '10px' }}>
+                                    Anteprima:
+                                </div>
+                                <div
+                                    style={{
+                                        width: '60px',
+                                        height: '60px',
+                                        borderRadius: '50%',
+                                        background: color,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontSize: '28px',
+                                        margin: '0 auto 10px',
+                                        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                                    }}
+                                >
+                                    {icon}
+                                </div>
+                                <div style={{ fontWeight: 'bold', color: color }}>
+                                    {name}
+                                </div>
+                            </div>
+
+                            <button type="submit" className="submit-btn">
+                                💾 Salva Modifiche
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            );
+        }
+
+        // ============ ACCOUNT MODAL ============
+        function AccountModal({ onClose, onCreate, accounts }) {
+            const [name, setName] = React.useState('');
+            const [icon, setIcon] = React.useState('💼');
+            const [color, setColor] = React.useState('#2196F3');
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onCreate({ name, icon, color });
+                onClose();
+            };
+
+            return (
+                <div className="modal" onClick={onClose}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h2 className="modal-title">➕ Nuovo Account</h2>
+                            <button className="close-btn" onClick={onClose}>×</button>
+                        </div>
+
+                        <form onSubmit={handleSubmit}>
+                            <div className="form-group">
+                                <label className="form-label">Nome Account</label>
+                                <input 
+                                    type="text"
+                                    className="form-input"
+                                    value={name}
+                                    onChange={e => setName(e.target.value)}
+                                    placeholder="es: Spese Casa, Progetti..."
+                                    required
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Icona (Emoji)</label>
+                                <input 
+                                    type="text"
+                                    className="form-input"
+                                    value={icon}
+                                    onChange={e => setIcon(e.target.value)}
+                                    placeholder="💼"
+                                    maxLength="2"
+                                    style={{ fontSize: '24px', textAlign: 'center' }}
+                                    required
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Colore</label>
+                                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                                    <input 
+                                        type="color"
+                                        value={color}
+                                        onChange={e => setColor(e.target.value)}
+                                        style={{
+                                            width: '60px',
+                                            height: '40px',
+                                            border: '2px solid #e0e0e0',
+                                            borderRadius: '8px',
+                                            cursor: 'pointer'
+                                        }}
+                                    />
+                                    <input 
+                                        type="text"
+                                        className="form-input"
+                                        value={color}
+                                        onChange={e => setColor(e.target.value)}
+                                        placeholder="#2196F3"
+                                        style={{ flex: 1 }}
+                                    />
+                                </div>
+                            </div>
+
+                            <button type="submit" className="submit-btn">
+                                ✅ Crea Account
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            );
+        }
+
+        // ============ TRANSFER MODAL ============
+        function TransferModal({ onClose, onTransfer, accounts, activeAccountId }) {
+            const [targetAccountId, setTargetAccountId] = React.useState('');
+            const [amount, setAmount] = React.useState('');
+            const [fromAccountType, setFromAccountType] = React.useState('cash');
+            const [toAccountType, setToAccountType] = React.useState('cash');
+            const [note, setNote] = React.useState('');
+            const [date, setDate] = React.useState(new Date().toISOString().split('T')[0]);
+
+            const otherAccounts = accounts.filter(a => a.id !== activeAccountId);
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (!targetAccountId || !amount) return;
+
+                onTransfer({
+                    fromAccountId: activeAccountId,
+                    toAccountId: targetAccountId,
+                    amount: parseFloat(amount),
+                    fromAccountType,
+                    toAccountType,
+                    note,
+                    date: new Date(date).toISOString()
+                });
+            };
+
+            return (
+                <div className="modal" onClick={onClose}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h2 className="modal-title">🔄 Trasferimento tra Account</h2>
+                            <button className="close-btn" onClick={onClose}>×</button>
+                        </div>
+
+                        <form onSubmit={handleSubmit}>
+                            <div style={{
+                                background: '#e3f2fd',
+                                padding: '12px',
+                                borderRadius: '8px',
+                                marginBottom: '20px',
+                                fontSize: '14px'
+                            }}>
+                                <strong>Da:</strong> {accounts.find(a => a.id === activeAccountId)?.icon} {accounts.find(a => a.id === activeAccountId)?.name}
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">A Account</label>
+                                <select 
+                                    className="form-input"
+                                    value={targetAccountId}
+                                    onChange={e => setTargetAccountId(e.target.value)}
+                                    required
+                                >
+                                    <option value="">Seleziona account destinazione</option>
+                                    {otherAccounts.map(acc => (
+                                        <option key={acc.id} value={acc.id}>
+                                            {acc.icon} {acc.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Importo (€)</label>
+                                <input 
+                                    type="number" 
+                                    step="0.01"
+                                    className="form-input"
+                                    value={amount}
+                                    onChange={e => setAmount(e.target.value)}
+                                    placeholder="0.00"
+                                    required
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Dal Conto</label>
+                                <select 
+                                    className="form-input"
+                                    value={fromAccountType}
+                                    onChange={e => setFromAccountType(e.target.value)}
+                                >
+                                    {getAccountsFilter().filter(a => a.id !== 'all').map(acc => (
+                                        <option key={acc.id} value={acc.id}>
+                                            {acc.icon} {acc.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Al Conto</label>
+                                <select 
+                                    className="form-input"
+                                    value={toAccountType}
+                                    onChange={e => setToAccountType(e.target.value)}
+                                >
+                                    {getAccountsFilter().filter(a => a.id !== 'all').map(acc => (
+                                        <option key={acc.id} value={acc.id}>
+                                            {acc.icon} {acc.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Data</label>
+                                <input 
+                                    type="date"
+                                    className="form-input"
+                                    value={date}
+                                    onChange={e => setDate(e.target.value)}
+                                    required
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Note (opzionale)</label>
+                                <input 
+                                    type="text"
+                                    className="form-input"
+                                    value={note}
+                                    onChange={e => setNote(e.target.value)}
+                                    placeholder="Motivo trasferimento..."
+                                />
+                            </div>
+
+                            <button type="submit" className="submit-btn">
+                                🔄 Esegui Trasferimento
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            );
+        }
+
+        function BudgetPage({ budgets, expenses, onSetBudget, onOpenModal }) {
+            return (
+                <div className="content">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                        <h2>Budget Mensile</h2>
+                        <button 
+                            onClick={onOpenModal}
+                            style={{
+                                padding: '10px 20px',
+                                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                fontWeight: 'bold'
+                            }}
+                        >
+                            + Imposta Budget
+                        </button>
+                    </div>
+
+                    {Object.keys(budgets).length === 0 ? (
+                        <div className="empty-state">
+                            <div className="empty-icon">💰</div>
+                            <h3>Nessun Budget Impostato</h3>
+                            <p>Imposta i budget per le tue categorie di spesa</p>
+                        </div>
+                    ) : (
+                        <div>
+                            {getCategoriesFromStorage().expense.map(category => {
+                                const budget = budgets[category.id] || 0;
+                                const spent = expenses[category.id] || 0;
+                                const percentage = budget > 0 ? (spent / budget) * 100 : 0;
+                                const isOverBudget = spent > budget;
+
+                                if (budget === 0) return null;
+
+                                return (
+                                    <div key={category.id} style={{
+                                        background: 'white',
+                                        padding: '20px',
+                                        borderRadius: '15px',
+                                        marginBottom: '15px',
+                                        boxShadow: '0 2px 5px rgba(0,0,0,0.05)'
+                                    }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                <span style={{ fontSize: '24px' }}>{category.icon}</span>
+                                                <span style={{ fontWeight: 'bold' }}>{category.name}</span>
+                                            </div>
+                                            <span style={{ 
+                                                fontWeight: 'bold',
+                                                color: isOverBudget ? '#f44336' : '#4CAF50'
+                                            }}>
+                                                €{spent.toFixed(2)} / €{budget.toFixed(2)}
+                                            </span>
+                                        </div>
+                                        
+                                        <div style={{
+                                            width: '100%',
+                                            height: '10px',
+                                            background: '#f0f0f0',
+                                            borderRadius: '5px',
+                                            overflow: 'hidden'
+                                        }}>
+                                            <div style={{
+                                                width: `${Math.min(percentage, 100)}%`,
+                                                height: '100%',
+                                                background: isOverBudget ? 
+                                                    'linear-gradient(90deg, #f44336 0%, #e91e63 100%)' : 
+                                                    'linear-gradient(90deg, #4CAF50 0%, #8BC34A 100%)',
+                                                transition: 'width 0.3s ease'
+                                            }}></div>
+                                        </div>
+                                        
+                                        <div style={{ 
+                                            marginTop: '5px', 
+                                            fontSize: '12px', 
+                                            color: isOverBudget ? '#f44336' : '#666',
+                                            textAlign: 'right'
+                                        }}>
+                                            {isOverBudget ? 
+                                                `Superato di €${(spent - budget).toFixed(2)}` :
+                                                `Rimanente: €${(budget - spent).toFixed(2)}`
+                                            }
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        function SetBudgetModal({ onClose, budgets, onSetBudget, onSetAllBudgets, transactions, settings, periodStart, getPrevPeriodBudgets }) {
+            const [amounts, setAmounts] = useState({});
+            const [copied, setCopied] = useState(false);
+            const cats = getCategoriesFromStorage().expense.filter(c => !c.archived);
+
+            // Formato periodo per il titolo
+            const periodLabel = (() => {
+                if (!periodStart) return '';
+                const start = new Date(periodStart);
+                const end = new Date(start);
+                end.setMonth(end.getMonth() + 1);
+                end.setDate(end.getDate() - 1);
+                return `${start.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })} – ${end.toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+            })();
+
+            useEffect(() => {
+                const initial = {};
+                cats.forEach(c => {
+                    if (budgets[c.id]) initial[c.id] = String(budgets[c.id]);
+                });
+                setAmounts(initial);
+            }, []);
+
+            const handleSave = () => {
+                const newBudgets = {};
+                cats.forEach(c => {
+                    const val = parseFloat(amounts[c.id]);
+                    if (!isNaN(val) && val > 0) newBudgets[c.id] = val;
+                });
+                onSetAllBudgets(newBudgets);
+                onClose();
+            };
+
+            const handleCopyPrevMonth = () => {
+                // Prendi i budget salvati del periodo precedente
+                const prevBudgets = getPrevPeriodBudgets ? getPrevPeriodBudgets() : {};
+                const hasPrev = Object.keys(prevBudgets).length > 0;
+
+                if (hasPrev) {
+                    // Copia i budget del periodo precedente
+                    const newAmounts = {};
+                    cats.forEach(c => {
+                        if (prevBudgets[c.id]) newAmounts[c.id] = String(prevBudgets[c.id]);
+                    });
+                    setAmounts(newAmounts);
+                } else {
+                    // Nessun budget precedente: suggerisci basandoti sulle spese del mese prima
+                    const start = new Date(periodStart);
+                    const prevEnd = new Date(start); prevEnd.setDate(prevEnd.getDate() - 1); prevEnd.setHours(23,59,59,999);
+                    const prevStart = new Date(start); prevStart.setMonth(prevStart.getMonth() - 1);
+                    const prevSpese = {};
+                    transactions
+                        .filter(t => t.type === 'expense' && new Date(t.date) >= prevStart && new Date(t.date) <= prevEnd)
+                        .forEach(t => { prevSpese[t.category] = (prevSpese[t.category] || 0) + t.amount; });
+                    const newAmounts = { ...amounts };
+                    cats.forEach(c => {
+                        if (prevSpese[c.id]) newAmounts[c.id] = String(Math.ceil(prevSpese[c.id] / 10) * 10);
+                    });
+                    setAmounts(newAmounts);
+                }
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+            };
+
+            // Calcola spese del periodo corrente per la progress bar
+            const periodEnd = (() => {
+                if (!periodStart) return new Date();
+                const e = new Date(periodStart);
+                e.setMonth(e.getMonth() + 1);
+                e.setDate(e.getDate() - 1);
+                e.setHours(23,59,59,999);
+                return e;
+            })();
+            const periodTx = transactions.filter(t => {
+                const d = new Date(t.date);
+                return t.type === 'expense' && d >= new Date(periodStart) && d <= periodEnd;
+            });
+
+            const total = cats.reduce((sum, c) => sum + (parseFloat(amounts[c.id]) || 0), 0);
+
+            return (
+                <div className="modal" onClick={onClose}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+                        <div className="modal-header" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
+                            <div style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <h2 className="modal-title">💰 Budget</h2>
+                                <button className="close-btn" onClick={onClose}>×</button>
+                            </div>
+                            {periodLabel && (
+                                <div style={{ fontSize: '12px', color: '#888', paddingLeft: '2px' }}>
+                                    📅 {periodLabel}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Pulsante copia mese precedente */}
+                        <div style={{ padding: '0 16px 12px' }}>
+                            <button
+                                type="button"
+                                onClick={handleCopyPrevMonth}
+                                style={{
+                                    width: '100%', padding: '10px',
+                                    background: copied ? '#e8f5e9' : '#f3e5f5',
+                                    color: copied ? '#2e7d32' : '#7b1fa2',
+                                    border: `2px solid ${copied ? '#4CAF50' : '#ce93d8'}`,
+                                    borderRadius: '10px', cursor: 'pointer',
+                                    fontWeight: 'bold', fontSize: '14px',
+                                    transition: 'all 0.2s'
+                                }}
+                            >
+                                {copied ? '✅ Budget copiati!' : '📋 Copia dal mese precedente'}
+                            </button>
+                        </div>
+
+                        {/* Lista categorie scrollabile */}
+                        <div style={{ overflowY: 'auto', flex: 1, padding: '0 16px' }}>
+                            {cats.map(category => {
+                                const val = parseFloat(amounts[category.id]) || 0;
+                                const spent = periodTx
+                                    .filter(t => t.category === category.id)
+                                    .reduce((s, t) => s + t.amount, 0);
+                                const pct = val > 0 ? Math.min((spent / val) * 100, 100) : 0;
+                                const over = val > 0 && spent > val;
+                                return (
+                                    <div key={category.id} style={{ marginBottom: '14px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                                            <div style={{ width: '34px', height: '34px', borderRadius: '8px', background: category.color + '20', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', flexShrink: 0 }}>
+                                                {category.icon}
+                                            </div>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontWeight: '600', fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{category.name}</div>
+                                                {val > 0 && (
+                                                    <div style={{ fontSize: '11px', color: over ? '#f44336' : '#999' }}>
+                                                        speso €{spent.toFixed(0)} {over ? `(+€${(spent-val).toFixed(0)})` : `/ €${val.toFixed(0)}`}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <input
+                                                type="number"
+                                                step="1"
+                                                min="0"
+                                                value={amounts[category.id] || ''}
+                                                onChange={e => setAmounts(prev => ({ ...prev, [category.id]: e.target.value }))}
+                                                placeholder="0"
+                                                style={{
+                                                    width: '80px', padding: '7px 10px',
+                                                    border: '2px solid ' + (val > 0 ? category.color + '80' : '#e0e0e0'),
+                                                    borderRadius: '8px', fontSize: '14px',
+                                                    textAlign: 'right', fontWeight: '600',
+                                                    outline: 'none', flexShrink: 0
+                                                }}
+                                            />
+                                        </div>
+                                        {val > 0 && (
+                                            <div style={{ height: '4px', background: '#f0f0f0', borderRadius: '2px' }}>
+                                                <div style={{
+                                                    height: '4px', borderRadius: '2px',
+                                                    width: pct + '%',
+                                                    background: over ? '#f44336' : category.color,
+                                                    transition: 'width 0.3s'
+                                                }} />
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* Footer con totale e salva */}
+                        <div style={{ padding: '14px 16px', borderTop: '1px solid #eee' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                <span style={{ color: '#666', fontSize: '13px' }}>Totale budget</span>
+                                <span style={{ fontWeight: 'bold', fontSize: '18px', color: '#667eea' }}>€ {total.toFixed(0)}</span>
+                            </div>
+                            <button onClick={handleSave} className="submit-btn" style={{ marginTop: 0 }}>
+                                💾 Salva budget {periodLabel ? `(${new Date(periodStart).toLocaleDateString('it-IT', { month: 'short', year: 'numeric' })})` : ''}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function SettingsModal({ onClose, settings, onSave, handleFileUpload, accounts, activeAccountId, getActiveAccount, deleteAccount, setShowSQLiteImportModal, setShowManageCategoriesModal, setShowManageAccountsModal, setTransactions }) {
+            const [monthStartDay, setMonthStartDay] = useState(settings.monthStartDay);
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onSave({ monthStartDay: parseInt(monthStartDay) });
+            };
+
+            return (
+                <div className="modal" onClick={onClose}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h2 className="modal-title">⚙️ Impostazioni</h2>
+                            <button className="close-btn" onClick={onClose}>×</button>
+                        </div>
+
+                        <form onSubmit={handleSubmit}>
+                            <div style={{ 
+                                padding: '15px', 
+                                background: '#f3e5f5', 
+                                borderRadius: '10px',
+                                marginBottom: '20px'
+                            }}>
+                                <div style={{ fontWeight: 'bold', marginBottom: '10px', color: '#7b1fa2' }}>
+                                    👥 Gestione Account
+                                </div>
+                                <div style={{ fontSize: '12px', color: '#666', marginBottom: '10px' }}>
+                                    Account corrente: <strong>{getActiveAccount()?.icon} {getActiveAccount()?.name}</strong>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    {accounts.map(acc => (
+                                        <div key={acc.id} style={{
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            alignItems: 'center',
+                                            padding: '8px',
+                                            background: acc.id === activeAccountId ? acc.color + '20' : '#fff',
+                                            borderRadius: '6px',
+                                            border: acc.id === activeAccountId ? `2px solid ${acc.color}` : '1px solid #e0e0e0'
+                                        }}>
+                                            <span>
+                                                {acc.icon} {acc.name}
+                                                {acc.id === activeAccountId && ' ✓'}
+                                            </span>
+                                            {accounts.length > 1 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        if (window.confirm(`Eliminare "${acc.name}"?\nTutti i dati verranno cancellati!`)) {
+                                                            deleteAccount(acc.id);
+                                                        }
+                                                    }}
+                                                    style={{
+                                                        background: 'none',
+                                                        border: 'none',
+                                                        color: '#f44336',
+                                                        cursor: 'pointer',
+                                                        fontSize: '18px',
+                                                        padding: '0 8px'
+                                                    }}
+                                                >
+                                                    🗑️
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">
+                                    📅 Il mese inizia dal giorno
+                                </label>
+                                <select 
+                                    className="form-input"
+                                    value={monthStartDay}
+                                    onChange={e => setMonthStartDay(e.target.value)}
+                                >
+                                    {Array.from({length: 28}, (_, i) => i + 1).map(day => (
+                                        <option key={day} value={day}>
+                                            {day}
+                                        </option>
+                                    ))}
+                                </select>
+                                <div style={{ fontSize: '12px', color: '#666', marginTop: '8px' }}>
+                                    Esempio: Se selezioni "10", il mese sarà dal 10 al 9 del mese successivo
+                                </div>
+                            </div>
+
+                            <div style={{ 
+                                padding: '15px', 
+                                background: '#e3f2fd', 
+                                borderRadius: '10px',
+                                marginBottom: '20px'
+                            }}>
+                                <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#1976d2' }}>
+                                    📊 Periodo Attuale:
+                                </div>
+                                <div style={{ fontSize: '14px', color: '#555' }}>
+                                    Dal {(() => {
+                                        const today = new Date();
+                                        const startDay = parseInt(monthStartDay);
+                                        let startDate, endDate;
+                                        
+                                        if (today.getDate() >= startDay) {
+                                            startDate = new Date(today.getFullYear(), today.getMonth(), startDay);
+                                            endDate = new Date(today.getFullYear(), today.getMonth() + 1, startDay - 1);
+                                        } else {
+                                            startDate = new Date(today.getFullYear(), today.getMonth() - 1, startDay);
+                                            endDate = new Date(today.getFullYear(), today.getMonth(), startDay - 1);
+                                        }
+                                        
+                                        return `${startDate.toLocaleDateString('it-IT')} al ${endDate.toLocaleDateString('it-IT')}`;
+                                    })()}
+                                </div>
+                            </div>
+
+                            <div style={{ 
+                                padding: '15px', 
+                                background: '#f3e5f5', 
+                                borderRadius: '10px',
+                                marginBottom: '20px'
+                            }}>
+                                <div style={{ fontSize: '12px', color: '#666' }}>
+                                    ℹ️ <strong>Nota:</strong> La settimana inizia sempre dal <strong>Lunedì</strong> come da standard italiano.
+                                </div>
+                            </div>
+
+                            <div style={{ 
+                                padding: '15px', 
+                                background: '#e8f5e9', 
+                                borderRadius: '10px',
+                                marginBottom: '20px'
+                            }}>
+                                <div style={{ fontWeight: 'bold', marginBottom: '10px', color: '#2e7d32' }}>
+                                    📥 Importa da 1Money
+                                </div>
+                                <div style={{ fontSize: '12px', color: '#666', marginBottom: '10px' }}>
+                                    Carica il file CSV esportato da 1Money per importare tutte le tue transazioni, categorie e conti automaticamente.
+                                </div>
+                                <input 
+                                    type="file" 
+                                    accept=".csv"
+                                    onChange={handleFileUpload}
+                                    style={{
+                                        width: '100%',
+                                        padding: '10px',
+                                        border: '2px dashed #4CAF50',
+                                        borderRadius: '8px',
+                                        cursor: 'pointer',
+                                        background: 'white'
+                                    }}
+                                />
+                                <div style={{ fontSize: '11px', color: '#999', marginTop: '8px' }}>
+                                    ⚠️ Nota: I trasferimenti tra conti verranno saltati. Le sottocategorie saranno salvate nelle note.
+                                </div>
+                            </div>
+
+                            <div style={{ 
+                                padding: '15px', 
+                                background: 'linear-gradient(135deg, #667eea20 0%, #764ba220 100%)',
+                                border: '2px solid #667eea',
+                                borderRadius: '10px',
+                                marginBottom: '20px'
+                            }}>
+                                <div style={{ fontWeight: 'bold', marginBottom: '10px', color: '#667eea', fontSize: '16px' }}>
+                                    🗄️ Import Backup SQLite 1Money
+                                </div>
+                                <div style={{ fontSize: '12px', color: '#555', marginBottom: '12px' }}>
+                                    Importa il backup SQLite completo di 1Money: tutti i conti, le categorie e le transazioni saranno importati senza perdere nulla.
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => { onClose(); setTimeout(() => setShowSQLiteImportModal && setShowSQLiteImportModal(true), 200); }}
+                                    style={{
+                                        width: '100%',
+                                        padding: '12px',
+                                        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '8px',
+                                        cursor: 'pointer',
+                                        fontWeight: 'bold',
+                                        fontSize: '14px'
+                                    }}
+                                >
+                                    🗄️ Apri Import SQLite
+                                </button>
+                            </div>
+
+                            <div style={{ 
+                                display: 'grid', 
+                                gridTemplateColumns: '1fr 1fr', 
+                                gap: '10px',
+                                marginBottom: '20px'
+                            }}>
+                                <button
+                                    type="button"
+                                    onClick={() => { onClose(); setTimeout(() => setShowManageCategoriesModal && setShowManageCategoriesModal(true), 200); }}
+                                    style={{
+                                        padding: '12px',
+                                        background: '#e3f2fd',
+                                        color: '#1976d2',
+                                        border: '2px solid #1976d2',
+                                        borderRadius: '8px',
+                                        cursor: 'pointer',
+                                        fontWeight: 'bold',
+                                        fontSize: '13px'
+                                    }}
+                                >
+                                    🏷️ Gestisci Categorie
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => { onClose(); setTimeout(() => setShowManageAccountsModal && setShowManageAccountsModal(true), 200); }}
+                                    style={{
+                                        padding: '12px',
+                                        background: '#e8f5e9',
+                                        color: '#2e7d32',
+                                        border: '2px solid #2e7d32',
+                                        borderRadius: '8px',
+                                        cursor: 'pointer',
+                                        fontWeight: 'bold',
+                                        fontSize: '13px'
+                                    }}
+                                >
+                                    💳 Gestisci Conti
+                                </button>
+                            </div>
+
+                            <div style={{ 
+                                padding: '15px', 
+                                background: '#ffebee',
+                                border: '2px solid #f44336',
+                                borderRadius: '10px',
+                                marginBottom: '20px'
+                            }}>
+                                <div style={{ fontWeight: 'bold', marginBottom: '12px', color: '#c62828', fontSize: '15px' }}>
+                                    🗑️ Reset Dati
+                                </div>
+
+                                {/* RESET 1: solo transazioni */}
+                                <div style={{ marginBottom: '12px' }}>
+                                    <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#333', marginBottom: '4px' }}>
+                                        Reset transazioni
+                                    </div>
+                                    <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px' }}>
+                                        Cancella solo le transazioni di <strong>{getActiveAccount()?.icon} {getActiveAccount()?.name}</strong>. Categorie, conti e impostazioni restano intatti.
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const accName = getActiveAccount()?.name || 'questo account';
+                                            if (window.confirm(`⚠️ Cancellare tutte le transazioni di "${accName}"?\n\nCategorie e impostazioni rimarranno invariate.`)) {
+                                                if (window.confirm(`🔴 CONFERMA\n\nElimino TUTTE le transazioni di "${accName}".\n\nProcedere?`)) {
+                                                    setTransactions([]);
+                                                    setTimeout(() => {
+                                                        window.deleteTransactionsFromDB(activeAccountId).then(() => {
+                                                            onClose();
+                                                            window.location.reload();
+                                                        });
+                                                    }, 100);
+                                                }
+                                                }
+                                            }
+                                        }}
                                         style={{
                                             width: '100%',
                                             padding: '11px',
