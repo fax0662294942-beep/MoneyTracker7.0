@@ -1,8 +1,8 @@
-const CACHE_NAME = 'moneytracker-v6';
+const CACHE_NAME = 'moneytracker-v7';
 const ASSETS = [
-  './',
-  './index.html',
-  './manifest.json'
+  '/MoneyTracker-7.0/',
+  '/MoneyTracker-7.0/index.html',
+  '/MoneyTracker-7.0/manifest.json'
 ];
 
 self.addEventListener('install', (event) => {
