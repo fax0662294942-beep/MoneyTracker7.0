@@ -1241,6 +1241,24 @@
 
             // Totali basati sul periodo selezionato (non su tutte le transazioni)
             const periodTransactions = getCurrentMonthTransactions();
+            const getVisibleTransactions = () => {
+                let tx = getCurrentMonthTransactions();
+
+                if (selectedAccount !== 'all') {
+                    tx = tx.filter(t => t.account === selectedAccount);
+                }
+
+                if (categoryFilter) {
+                    tx = tx.filter(t => t.category === categoryFilter);
+                }
+
+                if (transfersOnlyFilter) {
+                    tx = tx.filter(t => t.isTransfer);
+                }
+
+                return tx;
+            };
+
             const totalIncome = periodTransactions
                 .filter(t => t.type === 'income')
                 .reduce((acc, t) => acc + t.amount, 0);
@@ -3175,7 +3193,7 @@
 
             return (
                 <ul className="transaction-list">
-                    {transactions.map(transaction => {
+                    {getVisibleTransactions().map(transaction => {
                         const category = getCategoryInfo(transaction.type, transaction.category);
                         const account = getAccountInfo(transaction.account || 'cash');
                         return (
