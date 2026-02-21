@@ -1,18 +1,6 @@
-const CACHE_NAME = 'moneytracker-v7';
-const ASSETS = [
-  '/MoneyTracker7.0/',
-  '/MoneyTracker7.0/index.html',
-  '/MoneyTracker7.0/manifest.json'
-];
+const CACHE_NAME = 'moneytracker-v8';
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS).catch((err) => {
-        console.warn('Cache parziale:', err);
-      });
-    })
-  );
   self.skipWaiting();
 });
 
@@ -29,22 +17,34 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).then((response) => {
-        if (response && response.status === 200) {
+
+  const url = new URL(event.request.url);
+  const isHTML = event.request.mode === 'navigate' || url.pathname.endsWith('.html');
+
+  if (isHTML) {
+    // Network first per HTML: prende sempre la versione aggiornata dal server
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
           const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, clone);
-          });
-        }
-        return response;
-      }).catch(() => {
-        if (event.request.mode === 'navigate') {
-          return caches.match('./index.html');
-        }
-      });
-    })
-  );
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+  } else {
+    // Cache first per altri asset
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached;
+        return fetch(event.request).then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        });
+      })
+    );
+  }
 });

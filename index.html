@@ -4675,7 +4675,7 @@
                                                             window.MT_DB.close();
                                                             window.MT_DB = null;
                                                         }
-                                                        const deleteReq = indexedDB.deleteDatabase('MoneyTrackerDB');
+                                                        const deleteReq = indexedDB.deleteDatabase('MoneyTracker6');
                                                         deleteReq.onsuccess = () => { window.location.reload(); };
                                                         deleteReq.onerror = () => { window.location.reload(); };
                                                         deleteReq.onblocked = () => { window.location.reload(); };
