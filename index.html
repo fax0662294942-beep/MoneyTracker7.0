@@ -739,20 +739,23 @@
         window.MT_DB_CALLBACKS = [];
 
         function openMTDatabase() {
-            var req = indexedDB.open('MoneyTracker6', 1);
+            var req = indexedDB.open('MoneyTracker6', 2);
             req.onupgradeneeded = function(e) {
                 var db = e.target.result;
-                if (!db.objectStoreNames.contains('transactions')) {
-                    var store = db.createObjectStore('transactions', { keyPath: 'id' });
-                    store.createIndex('account', 'account', { unique: false });
+                // Versione 1: indice sbagliato su 'account' (confondeva profilo con conto bancario)
+                if (db.objectStoreNames.contains('transactions')) {
+                    db.deleteObjectStore('transactions');
                 }
+                // Versione 2: indice su '_profileId' separato dal campo 'account' (conto bancario)
+                var store = db.createObjectStore('transactions', { keyPath: 'id' });
+                store.createIndex('_profileId', '_profileId', { unique: false });
             };
             req.onsuccess = function(e) {
                 window.MT_DB = e.target.result;
                 window.MT_DB_READY = true;
                 window.MT_DB_CALLBACKS.forEach(function(cb) { cb(); });
                 window.MT_DB_CALLBACKS = [];
-                console.log('IndexedDB pronto');
+                console.log('IndexedDB pronto (v2)');
             };
             req.onerror = function(e) {
                 console.error('IndexedDB errore:', e.target.error);
@@ -765,26 +768,26 @@
             else window.MT_DB_CALLBACKS.push(cb);
         }
 
-        // Salva array transazioni per un account
-        window.saveTransactionsToDB = function(accountId, transactions) {
+        // Salva array transazioni per un account (profilo)
+        window.saveTransactionsToDB = function(profileId, transactions) {
             return new Promise(function(resolve, reject) {
                 onDBReady(function() {
                     var db = window.MT_DB;
                     var tx = db.transaction('transactions', 'readwrite');
                     var store = tx.objectStore('transactions');
-                    // Prima cancella vecchie transazioni di questo account
-                    var idx = store.index('account');
-                    var req = idx.openCursor(IDBKeyRange.only(accountId));
+                    // Prima cancella vecchie transazioni di questo profilo
+                    var idx = store.index('_profileId');
+                    var req = idx.openCursor(IDBKeyRange.only(profileId));
                     var toDelete = [];
                     req.onsuccess = function(e) {
                         var cursor = e.target.result;
                         if (cursor) { toDelete.push(cursor.primaryKey); cursor.continue(); }
                         else {
                             toDelete.forEach(function(k) { store.delete(k); });
-                            // Poi inserisci nuove
+                            // Poi inserisci nuove - NON sovrascrivere il campo 'account' (conto bancario)
                             transactions.forEach(function(t) {
                                 var obj = Object.assign({}, t);
-                                obj.account = accountId;
+                                obj._profileId = profileId; // campo separato per indicizzazione
                                 store.put(obj);
                             });
                         }
@@ -795,30 +798,30 @@
             });
         };
 
-        // Carica transazioni per un account
-        window.loadTransactionsFromDB = function(accountId) {
+        // Carica transazioni per un profilo
+        window.loadTransactionsFromDB = function(profileId) {
             return new Promise(function(resolve, reject) {
                 onDBReady(function() {
                     var db = window.MT_DB;
                     var tx = db.transaction('transactions', 'readonly');
                     var store = tx.objectStore('transactions');
-                    var idx = store.index('account');
-                    var req = idx.getAll(IDBKeyRange.only(accountId));
+                    var idx = store.index('_profileId');
+                    var req = idx.getAll(IDBKeyRange.only(profileId));
                     req.onsuccess = function(e) { resolve(e.target.result || []); };
                     req.onerror = function(e) { reject(e.target.error); };
                 });
             });
         };
 
-        // Cancella tutte le transazioni di un account
-        window.deleteTransactionsFromDB = function(accountId) {
+        // Cancella tutte le transazioni di un profilo
+        window.deleteTransactionsFromDB = function(profileId) {
             return new Promise(function(resolve, reject) {
                 onDBReady(function() {
                     var db = window.MT_DB;
                     var tx = db.transaction('transactions', 'readwrite');
                     var store = tx.objectStore('transactions');
-                    var idx = store.index('account');
-                    var req = idx.openCursor(IDBKeyRange.only(accountId));
+                    var idx = store.index('_profileId');
+                    var req = idx.openCursor(IDBKeyRange.only(profileId));
                     req.onsuccess = function(e) {
                         var cursor = e.target.result;
                         if (cursor) { cursor.delete(); cursor.continue(); }
@@ -995,6 +998,7 @@
         function App() {
             // ============ ACCOUNT MULTIPLI ============
             const [accounts, setAccounts] = useState([]);
+            const isLoadingTransactions = useRef(false);
             const [activeAccountId, setActiveAccountId] = useState(null);
             const [showAccountModal, setShowAccountModal] = useState(false);
             const [showTransferModal, setShowTransferModal] = useState(false);
@@ -1080,6 +1084,8 @@
                 });
                 
                 // Carica transazioni da IndexedDB
+                isLoadingTransactions.current = true;
+                setTransactions([]);
                 window.loadTransactionsFromDB(activeAccountId).then((txs) => {
                     // Migrazione: se IndexedDB è vuoto, controlla localStorage vecchio
                     if (txs.length === 0) {
@@ -1091,6 +1097,7 @@
                                     // Migra da localStorage a IndexedDB
                                     window.saveTransactionsToDB(activeAccountId, oldTxs).then(() => {
                                         window.deleteTransactionsFromDB(activeAccountId);
+                                        isLoadingTransactions.current = false;
                                         setTransactions(oldTxs);
                                     });
                                     return;
@@ -1098,6 +1105,7 @@
                             } catch(e) {}
                         }
                     }
+                    isLoadingTransactions.current = false;
                     setTransactions(txs);
                 }).catch((e) => {
                     console.error('Errore caricamento IndexedDB:', e);
@@ -1115,6 +1123,7 @@
             // ============ SALVA DATI ACCOUNT ATTIVO ============
             useEffect(() => {
                 if (!activeAccountId || transactions.length === 0) return;
+                if (isLoadingTransactions.current) return; // non salvare durante il caricamento
                 window.saveTransactionsToDB(activeAccountId, transactions).catch((e) => {
                     console.error('Errore salvataggio IndexedDB:', e);
                 });
