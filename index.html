@@ -94,6 +94,8 @@
             padding: 8px;
             border-radius: 10px;
             text-align: center;
+            border: 2px solid transparent;
+            transition: border-color 0.2s, transform 0.15s, box-shadow 0.2s;
         }
         
         .stat-box.income {
@@ -106,6 +108,30 @@
         
         .stat-box.neutral {
             background: #e3f2fd;
+        }
+
+        .stat-box.active-income {
+            border-color: #4CAF50;
+            box-shadow: 0 2px 8px rgba(76,175,80,0.3);
+            transform: scale(1.03);
+        }
+
+        .stat-box.active-expense {
+            border-color: #f44336;
+            box-shadow: 0 2px 8px rgba(244,67,54,0.3);
+            transform: scale(1.03);
+        }
+
+        .category-sticky-bar {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: white;
+            padding: 10px 20px 10px 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
         }
         
         .stat-label {
@@ -2309,27 +2335,53 @@
                     <div className="balance-card">
                         <div className="balance-label">Saldo {formatPeriodDisplay()}</div>
                         <div className="balance-amount">€ {balance.toFixed(2)}</div>
-		                <div className="stats-row" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
-		                    <div
-		                        className="stat-box income"
-		                        onClick={() => { setCurrentPage('categories'); setCategoryFocus('income'); }}
-		                        style={{ cursor: 'pointer' }}
-		                        title="Vedi categorie Entrate"
-		                    >
+		                {currentPage !== 'categories' && (
+		                    <div className="stats-row" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
+		                        <div
+		                            className="stat-box income"
+		                            onClick={() => { setCurrentPage('categories'); setCategoryFocus('income'); }}
+		                            style={{ cursor: 'pointer' }}
+		                            title="Vedi categorie Entrate"
+		                        >
+                                    <div className="stat-label">Entrate</div>
+                                    <div className="stat-value income">€ {totalIncome.toFixed(2)}</div>
+                                </div>
+		                        <div
+		                            className="stat-box expense"
+		                            onClick={() => { setCurrentPage('categories'); setCategoryFocus('expense'); }}
+		                            style={{ cursor: 'pointer' }}
+		                            title="Vedi categorie Uscite"
+		                        >
+                                    <div className="stat-label">Uscite</div>
+                                    <div className="stat-value expense">€ {totalExpense.toFixed(2)}</div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Sticky bar Entrate/Uscite — solo nella schermata Categorie */}
+                    {currentPage === 'categories' && (
+                        <div className="category-sticky-bar">
+                            <div
+                                className={`stat-box income${categoryFocus === 'income' ? ' active-income' : ''}`}
+                                onClick={() => setCategoryFocus('income')}
+                                style={{ cursor: 'pointer' }}
+                                title="Vedi categorie Entrate"
+                            >
                                 <div className="stat-label">Entrate</div>
                                 <div className="stat-value income">€ {totalIncome.toFixed(2)}</div>
                             </div>
-		                    <div
-		                        className="stat-box expense"
-		                        onClick={() => { setCurrentPage('categories'); setCategoryFocus('expense'); }}
-		                        style={{ cursor: 'pointer' }}
-		                        title="Vedi categorie Uscite"
-		                    >
+                            <div
+                                className={`stat-box expense${categoryFocus === 'expense' ? ' active-expense' : ''}`}
+                                onClick={() => setCategoryFocus('expense')}
+                                style={{ cursor: 'pointer' }}
+                                title="Vedi categorie Uscite"
+                            >
                                 <div className="stat-label">Uscite</div>
                                 <div className="stat-value expense">€ {totalExpense.toFixed(2)}</div>
                             </div>
                         </div>
-                    </div>
+                    )}
 
                     {currentPage === 'accounts' && (
                         <AccountsView
