@@ -618,35 +618,15 @@
             var tables = window.queryDB(db, "SELECT name FROM sqlite_master WHERE type='table'");
             console.log('Tabelle trovate:', tables.map(function(t) { return t.name; }));
 
-            // Risolvi i nomi reali delle tabelle (alcuni backup usano suffissi o maiuscole)
-            function resolveTableName(tables, base) {
-                var baseLc = String(base).toLowerCase();
-                var names = (tables || []).map(function(t){ return t && t.name ? t.name : t; }).filter(Boolean);
-                // match esatto case-insensitive
-                var exact = names.find(function(n){ return String(n).toLowerCase() === baseLc; });
-                if (exact) return exact;
-                // match prefisso (es. de1, de_2024)
-                var pref = names.find(function(n){ return String(n).toLowerCase().startsWith(baseLc); });
-                if (pref) return pref;
-                // match contiene
-                var cont = names.find(function(n){ return String(n).toLowerCase().includes(baseLc); });
-                return cont || base;
-            }
-
-            var tableDE = resolveTableName(tables, 'de');
-            var tableTA = resolveTableName(tables, 'ta');
-            var tableTR = resolveTableName(tables, 'tr');
-            console.log('Tabelle risolte:', { de: tableDE, ta: tableTA, tr: tableTR });
-
-            var rawCategories = window.queryDB(db, "SELECT * FROM \"" + tableDE + "\"");
+            var rawCategories = window.queryDB(db, "SELECT * FROM de");
             console.log('Categorie trovate:', rawCategories.length);
             if (rawCategories.length > 0) console.log('Colonne DE:', Object.keys(rawCategories[0]));
 
-            var rawAccounts = window.queryDB(db, "SELECT * FROM \"" + tableTA + "\"");
+            var rawAccounts = window.queryDB(db, "SELECT * FROM ta");
             console.log('Conti trovati:', rawAccounts.length);
             if (rawAccounts.length > 0) console.log('Colonne TA:', Object.keys(rawAccounts[0]));
 
-            var rawTransactions = window.queryDB(db, "SELECT * FROM \"" + tableTR + "\"");
+            var rawTransactions = window.queryDB(db, "SELECT * FROM tr");
             console.log('Transazioni trovate:', rawTransactions.length);
             if (rawTransactions.length > 0) console.log('Colonne TR:', Object.keys(rawTransactions[0]));
 
@@ -1026,8 +1006,7 @@
             const [showEditCategoryModal, setShowEditCategoryModal] = useState(null); // categoryId
             const [categoryFilter, setCategoryFilter] = useState(null); // per filtrare transazioni
             const [activeTab, setActiveTab] = useState('transactions');
-                        const [catViewType, setCatViewType] = useState('expense');
-const [currentPage, setCurrentPage] = useState('categories');
+            const [currentPage, setCurrentPage] = useState('categories');
             const chartRef = useRef(null);
             const chartInstance = useRef(null);
             const trendChartRef = useRef(null);
@@ -1355,6 +1334,9 @@ const [currentPage, setCurrentPage] = useState('categories');
                 return `${startDate.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })} - ${endDate.toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })}`;
             };
 
+		    // Focus della schermata categorie: 'expense' (uscite) o 'income' (entrate)
+		    const [categoryFocus, setCategoryFocus] = useState('expense');
+
             const getMonthlyExpensesByCategory = () => {
                 const monthlyTransactions = getCurrentMonthTransactions();
                 const expenses = {};
@@ -1371,22 +1353,17 @@ const [currentPage, setCurrentPage] = useState('categories');
                 return expenses;
             };
 
-const getMonthlyIncomeByCategory = () => {
-    const monthlyTransactions = getCurrentMonthTransactions();
-    const incomes = {};
-
-    monthlyTransactions
-        .filter(t => t.type === 'income')
-        .forEach(t => {
-            if (!incomes[t.category]) {
-                incomes[t.category] = 0;
-            }
-            incomes[t.category] += t.amount;
-        });
-
-    return incomes;
-};
-
+		    const getMonthlyIncomeByCategory = () => {
+		        const monthlyTransactions = getCurrentMonthTransactions();
+		        const incomes = {};
+		        monthlyTransactions
+		            .filter(t => t.type === 'income')
+		            .forEach(t => {
+		                if (!incomes[t.category]) incomes[t.category] = 0;
+		                incomes[t.category] += t.amount;
+		            });
+		        return incomes;
+		    };
 
             const addTransaction = (transaction) => {
                 setTransactions([transaction, ...transactions]);
@@ -1524,7 +1501,7 @@ const getMonthlyIncomeByCategory = () => {
             };
 
             // IMPORT DA 1MONEY CSV - versione completa senza perdita dati
-            const import1MoneyCSV = async (csvText) => {
+            const import1MoneyCSV = (csvText) => {
                 try {
                     const lines = csvText.split('\n').filter(line => line.trim());
                     if (lines.length < 2) throw new Error('File CSV vuoto o non valido');
@@ -1697,26 +1674,8 @@ const getMonthlyIncomeByCategory = () => {
                     }
 
                     // Aggiungi transazioni (più recenti prima)
-                    // Salva transazioni su IndexedDB per l'account principale attivo
                     importedTransactions.sort((a, b) => new Date(b.date) - new Date(a.date));
-
-                    const existing = await window.loadTransactionsFromDB(activeAccountId);
-                    const merged = [...importedTransactions, ...(existing || [])];
-
-                    // dedup per id
-                    const seen = {};
-                    const unique = [];
-                    merged.forEach(t => {
-                        const k = String(t.id);
-                        if (!seen[k]) { seen[k] = true; unique.push(t); }
-                    });
-                    unique.sort((a,b) => new Date(b.date) - new Date(a.date));
-
-                    await window.saveTransactionsToDB(activeAccountId, unique);
-                    setTransactions(unique);
-                    setCategoriesVersion(v => v + 1);
-
-                    
+                    setTransactions(prev => [...importedTransactions, ...prev]);
 
                     return {
                         success: true,
@@ -1736,15 +1695,9 @@ const getMonthlyIncomeByCategory = () => {
                 const file = event.target.files[0];
                 if (!file) return;
                 
-                // Conferma import (non cancella i dati esistenti: aggiunge e/o crea categorie/conti mancanti)
-                if (!window.confirm("Import CSV 1Money:\n\n• Verranno importate le transazioni del file\n• Verranno create categorie/conti mancanti\n• I dati esistenti NON verranno cancellati\n\nContinuare?")) {
-                    event.target.value = "";
-                    return;
-                }
-                
                 const reader = new FileReader();
-                reader.onload = async (e) => {
-                    const result = await import1MoneyCSV(e.target.result);
+                reader.onload = (e) => {
+                    const result = import1MoneyCSV(e.target.result);
                     if (result.success) {
                         let msg = `✅ Import completato!\n\n`;
                         msg += `📥 Transazioni importate: ${result.imported}\n`;
@@ -1970,11 +1923,11 @@ const getMonthlyIncomeByCategory = () => {
                         });
                     }
                 }
-            }, [currentPage, filteredTransactions, selectedAccount, settings.monthStartDay, viewMode, periodOffset]);
+		    }, [currentPage, filteredTransactions, selectedAccount, settings.monthStartDay, viewMode, periodOffset, categoryFocus]);
 
-            // Grafico centrale categorie (stile 1Money)
-            useEffect(() => {
-                if (currentPage === 'categories') {
+		    // Grafico centrale categorie (stile 1Money)
+		    useEffect(() => {
+		        if (currentPage === 'categories') {
                     setTimeout(() => {
                         const canvas = document.getElementById('categoryChart');
                         if (!canvas) return;
@@ -1986,18 +1939,19 @@ const getMonthlyIncomeByCategory = () => {
                             window.categoryChartInstance.destroy();
                         }
 
-                        const expensesByCategory = getMonthlyExpensesByCategory();
+		                const byCategory = categoryFocus === 'income' ? getMonthlyIncomeByCategory() : getMonthlyExpensesByCategory();
+		                const catList = categoryFocus === 'income' ? getCategoriesFromStorage().income : getCategoriesFromStorage().expense;
 
-                        const labels = Object.keys(expensesByCategory).map(catId => {
-                            const cat = getCategoriesFromStorage().expense.find(c => c.id === catId);
-                            return cat ? cat.name : catId;
-                        });
+		                const labels = Object.keys(byCategory).map(catId => {
+		                    const cat = catList.find(c => c.id === catId);
+		                    return cat ? cat.name : catId;
+		                });
 
-                        const data = Object.values(expensesByCategory);
-                        const colors = Object.keys(expensesByCategory).map(catId => {
-                            const cat = getCategoriesFromStorage().expense.find(c => c.id === catId);
-                            return cat ? cat.color : '#999';
-                        });
+		                const data = Object.values(byCategory);
+		                const colors = Object.keys(byCategory).map(catId => {
+		                    const cat = catList.find(c => c.id === catId);
+		                    return cat ? cat.color : '#999';
+		                });
 
                         if (data.length > 0) {
                             window.categoryChartInstance = new Chart(ctx, {
@@ -2321,12 +2275,22 @@ const getMonthlyIncomeByCategory = () => {
                     <div className="balance-card">
                         <div className="balance-label">Saldo {formatPeriodDisplay()}</div>
                         <div className="balance-amount">€ {balance.toFixed(2)}</div>
-                        <div className="stats-row" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
-                            <div className="stat-box income" onClick={() => { setCatViewType('income'); setCurrentPage('categories'); }} style={{ cursor: 'pointer' }}>
+		                <div className="stats-row" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
+		                    <div
+		                        className="stat-box income"
+		                        onClick={() => { setCurrentPage('categories'); setCategoryFocus('income'); }}
+		                        style={{ cursor: 'pointer' }}
+		                        title="Vedi categorie Entrate"
+		                    >
                                 <div className="stat-label">Entrate</div>
                                 <div className="stat-value income">€ {totalIncome.toFixed(2)}</div>
                             </div>
-                            <div className="stat-box expense" onClick={() => { setCatViewType('expense'); setCurrentPage('categories'); }} style={{ cursor: 'pointer' }}>
+		                    <div
+		                        className="stat-box expense"
+		                        onClick={() => { setCurrentPage('categories'); setCategoryFocus('expense'); }}
+		                        style={{ cursor: 'pointer' }}
+		                        title="Vedi categorie Uscite"
+		                    >
                                 <div className="stat-label">Uscite</div>
                                 <div className="stat-value expense">€ {totalExpense.toFixed(2)}</div>
                             </div>
@@ -2357,17 +2321,16 @@ const getMonthlyIncomeByCategory = () => {
                         />
                     )}
 
-                    {currentPage === 'categories' && (
-                        <CategoriesView 
-                            expenses={catViewType === 'income' ? getMonthlyIncomeByCategory() : getMonthlyExpensesByCategory()}
-                            budgets={budgets}
-                            onCategoryClick={handleCategoryClick}
-                            viewType={catViewType}
-                            totalIncome={totalIncome}
-                            totalExpense={totalExpense}
-                            onViewTypeChange={setCatViewType}
-                        />
-                    )}
+		            {currentPage === 'categories' && (
+		                <CategoriesView 
+		                    mode={categoryFocus}
+		                    expenses={categoryFocus === 'income' ? getMonthlyIncomeByCategory() : getMonthlyExpensesByCategory()}
+		                    budgets={categoryFocus === 'income' ? {} : budgets}
+		                    totalIncome={totalIncome}
+		                    totalExpense={totalExpense}
+		                    onCategoryClick={handleCategoryClick}
+		                />
+		            )}
 
                     {currentPage === 'home' && (
                         <div
@@ -2448,13 +2411,13 @@ const getMonthlyIncomeByCategory = () => {
                                     </button>
                                     {transfersOnlyFilter && (
                                         <span style={{ fontSize: '12px', color: '#666' }}>
-                                            {((viewMode === "all") ? filteredTransactions : periodTransactions).filter(t => t.isTransfer).length} trasferimenti
+                                            {filteredTransactions.filter(t => t.isTransfer).length} trasferimenti
                                         </span>
                                     )}
                                 </div>
                                 
                                 {(() => {
-                                    let displayTransactions = (viewMode === "all") ? filteredTransactions : periodTransactions;
+                                    let displayTransactions = filteredTransactions;
                                     if (categoryFilter) displayTransactions = displayTransactions.filter(t => t.category === categoryFilter);
                                     if (transfersOnlyFilter) displayTransactions = displayTransactions.filter(t => t.isTransfer);
                                     
@@ -3378,7 +3341,7 @@ const getMonthlyIncomeByCategory = () => {
             );
         }
 
-        function CategoriesView({ expenses, budgets, onCategoryClick, viewType = 'expense', totalIncome = 0, totalExpense = 0, onViewTypeChange }) {
+		function CategoriesView({ expenses, budgets, onCategoryClick, mode = 'expense', totalIncome = 0, totalExpense = 0 }) {
             const [categoryOrder, setCategoryOrder] = React.useState([]);
             const [draggedItem, setDraggedItem] = React.useState(null);
             const [dragOverItem, setDragOverItem] = React.useState(null);
@@ -3391,46 +3354,53 @@ const getMonthlyIncomeByCategory = () => {
                 setCats(getCategoriesFromStorage());
             }, []);
 
-            React.useEffect(() => {
-                const savedOrder = localStorage.getItem(viewType === 'income' ? 'categoryOrder_income' : 'categoryOrder');
+		    const orderKey = mode === 'income' ? 'categoryOrder_income' : 'categoryOrder';
+
+		    React.useEffect(() => {
+		        const savedOrder = localStorage.getItem(orderKey);
                 if (savedOrder) {
                     setCategoryOrder(JSON.parse(savedOrder));
                 } else {
-                    setCategoryOrder((viewType === 'income' ? cats.income : cats.expense).map(c => c.id));
+		            setCategoryOrder((cats[mode] || []).map(c => c.id));
                 }
-            }, []);
+		    }, [orderKey, mode]);
 
-            React.useEffect(() => {
-                if (categoryOrder.length > 0) {
-                    localStorage.setItem(viewType === 'income' ? 'categoryOrder_income' : 'categoryOrder', JSON.stringify(categoryOrder));
-                }
-            }, [categoryOrder]);
+		    React.useEffect(() => {
+		        if (categoryOrder.length > 0) {
+		            localStorage.setItem(orderKey, JSON.stringify(categoryOrder));
+		        }
+		    }, [categoryOrder, orderKey]);
 
-            const monthlyByCategory = expenses;
-            const modeAmount = (viewType === 'income') ? totalIncome : totalExpense;
-            const otherAmount = (viewType === 'income') ? totalExpense : totalIncome;
-            const totalBudget = (viewType === 'expense') ? Object.values(budgets).reduce((acc, val) => acc + val, 0) : 0;
+		    const dataByCategory = expenses || {};
+		    const primaryTotal = Object.values(dataByCategory).reduce((acc, val) => acc + val, 0);
+		    const totalBudget = mode === 'expense' ? Object.values(budgets || {}).reduce((acc, val) => acc + val, 0) : 0;
 
-            const activeCats = (viewType === 'income' ? cats.income : cats.expense).filter(c => !c.archived);
-            const archivedCats = (viewType === 'income' ? cats.income : cats.expense).filter(c => c.archived);
+		    const activeCats = (cats[mode] || []).filter(c => !c.archived);
+		    const archivedCats = (cats[mode] || []).filter(c => c.archived);
 
             // Ordina le categorie attive
-            const orderedCategories = categoryOrder
-                .map(id => activeCats.find(c => c.id === id))
-                .filter(Boolean);
+		    const orderedCategories = categoryOrder
+		        .map(id => activeCats.find(c => c.id === id))
+		        .filter(Boolean);
             activeCats.forEach(cat => {
                 if (!categoryOrder.includes(cat.id)) orderedCategories.push(cat);
             });
 
             // Archivia/ripristina categoria
-            const toggleArchive = (catId) => {
-                const updated = getCategoriesFromStorage();
-                updated.expense = updated.expense.map(c =>
-                    c.id === catId ? { ...c, archived: !c.archived } : c
-                );
-                saveCategoriestoStorage(updated);
-                setCats(getCategoriesFromStorage());
-            };
+		    const toggleArchive = (catId) => {
+		        const updated = getCategoriesFromStorage();
+		        updated[mode] = (updated[mode] || []).map(c =>
+		            c.id === catId ? { ...c, archived: !c.archived } : c
+		        );
+		        saveCategoriestoStorage(updated);
+		        setCats(getCategoriesFromStorage());
+		    };
+
+		    const isIncomeMode = mode === 'income';
+		    const primaryLabel = isIncomeMode ? 'Entrate' : 'Spese';
+		    const primaryAmount = isIncomeMode ? totalIncome : totalExpense;
+		    const secondaryLabel = isIncomeMode ? 'Spese' : 'Entrate';
+		    const secondaryAmount = isIncomeMode ? totalExpense : totalIncome;
 
             // Desktop drag
             const handleDragStart = (e, categoryId) => {
@@ -3491,18 +3461,22 @@ const getMonthlyIncomeByCategory = () => {
                 <div className="dashboard-container">
                     <div className="chart-center-container">
                         <canvas id="categoryChart" style={{ maxHeight: '280px' }}></canvas>
-                        <div className="chart-center-info" style={{ cursor: 'pointer' }} onClick={() => { if (onViewTypeChange) onViewTypeChange(viewType === 'income' ? 'expense' : 'income'); }}>
-                            <div className="chart-center-label">{viewType === 'income' ? 'Entrate' : 'Uscite'}</div>
-                            <div className="chart-center-amount" style={{ color: viewType === 'income' ? '#4CAF50' : '#f44336' }}>{modeAmount.toFixed(2)} €</div>
-                            <div className="chart-center-budget" style={{ color: viewType === 'income' ? '#f44336' : '#4CAF50' }}>{viewType === 'income' ? `Uscite ${otherAmount.toFixed(2)} €` : `Entrate ${otherAmount.toFixed(2)} €`}</div>
+                        <div className="chart-center-info">
+		                    <div className="chart-center-label">{primaryLabel}</div>
+		                    <div className="chart-center-amount" style={{ color: isIncomeMode ? '#4CAF50' : '#f44336' }}>
+		                        {primaryAmount.toFixed(2)} €
+		                    </div>
+		                    <div className="chart-center-budget" style={{ color: isIncomeMode ? '#f44336' : '#4CAF50' }}>
+		                        {secondaryLabel}: {secondaryAmount.toFixed(2)} €
+		                    </div>
                         </div>
                     </div>
 
                     {/* Categorie attive */}
                     <div className="categories-grid">
-                        {orderedCategories.map(category => {
-                            const amount = monthlyExpenses[category.id] || 0;
-                            const budget = (viewType === 'expense') ? (budgets[category.id] || 0) : 0;
+		            {orderedCategories.map(category => {
+		                const amount = dataByCategory[category.id] || 0;
+		                const budget = (mode === 'expense' && budgets) ? (budgets[category.id] || 0) : 0;
                             const exceeded = budget > 0 && amount > budget;
                             const remaining = budget - amount;
                             const isDragging = draggedItem === category.id;
@@ -3548,11 +3522,11 @@ const getMonthlyIncomeByCategory = () => {
                                     <div className="category-circle" style={{ background: category.color }}>
                                         {category.icon}
                                     </div>
-                                    <div className="category-amount" style={{ color: exceeded ? '#f44336' : category.color }}>
+		                <div className="category-amount" style={{ color: exceeded ? '#f44336' : category.color }}>
                                         {amount.toFixed(0)} €
                                     </div>
                                     <div className="category-name-small">{category.name}</div>
-                                    {budget > 0 && (
+		                {mode === 'expense' && budget > 0 && (
                                         <div style={{ fontSize: exceeded ? '10px' : '9px', color: exceeded ? '#f44336' : '#999', fontWeight: exceeded ? 'bold' : 'normal', marginTop: '2px' }}>
                                             {exceeded
                                                 ? <span style={{ color: '#f44336', fontWeight: 'bold' }}>+{Math.abs(remaining).toFixed(0)} €</span>
