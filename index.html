@@ -618,35 +618,15 @@
             var tables = window.queryDB(db, "SELECT name FROM sqlite_master WHERE type='table'");
             console.log('Tabelle trovate:', tables.map(function(t) { return t.name; }));
 
-            // Risolvi i nomi reali delle tabelle (alcuni backup usano suffissi o maiuscole)
-            function resolveTableName(tables, base) {
-                var baseLc = String(base).toLowerCase();
-                var names = (tables || []).map(function(t){ return t && t.name ? t.name : t; }).filter(Boolean);
-                // match esatto case-insensitive
-                var exact = names.find(function(n){ return String(n).toLowerCase() === baseLc; });
-                if (exact) return exact;
-                // match prefisso (es. de1, de_2024)
-                var pref = names.find(function(n){ return String(n).toLowerCase().startsWith(baseLc); });
-                if (pref) return pref;
-                // match contiene
-                var cont = names.find(function(n){ return String(n).toLowerCase().includes(baseLc); });
-                return cont || base;
-            }
-
-            var tableDE = resolveTableName(tables, 'de');
-            var tableTA = resolveTableName(tables, 'ta');
-            var tableTR = resolveTableName(tables, 'tr');
-            console.log('Tabelle risolte:', { de: tableDE, ta: tableTA, tr: tableTR });
-
-            var rawCategories = window.queryDB(db, "SELECT * FROM \"" + tableDE + "\"");
+            var rawCategories = window.queryDB(db, "SELECT * FROM de");
             console.log('Categorie trovate:', rawCategories.length);
             if (rawCategories.length > 0) console.log('Colonne DE:', Object.keys(rawCategories[0]));
 
-            var rawAccounts = window.queryDB(db, "SELECT * FROM \"" + tableTA + "\"");
+            var rawAccounts = window.queryDB(db, "SELECT * FROM ta");
             console.log('Conti trovati:', rawAccounts.length);
             if (rawAccounts.length > 0) console.log('Colonne TA:', Object.keys(rawAccounts[0]));
 
-            var rawTransactions = window.queryDB(db, "SELECT * FROM \"" + tableTR + "\"");
+            var rawTransactions = window.queryDB(db, "SELECT * FROM tr");
             console.log('Transazioni trovate:', rawTransactions.length);
             if (rawTransactions.length > 0) console.log('Colonne TR:', Object.keys(rawTransactions[0]));
 
@@ -935,9 +915,24 @@
             return DEFAULT_ACCOUNTS_FILTER;
         };
 
+        // Profilo attivo corrente (aggiornato da switchAccount)
+        window._activeProfileId = window._activeProfileId || null;
+
         const getCustomTransactionAccounts = () => {
             try {
-                const stored = localStorage.getItem('customTransactionAccounts');
+                // Chiave per profilo attivo, fallback alla chiave globale per retrocompatibilità
+                const profileKey = window._activeProfileId
+                    ? `customTransactionAccounts_${window._activeProfileId}`
+                    : 'customTransactionAccounts';
+                let stored = localStorage.getItem(profileKey);
+                // Migrazione: se non c'è per questo profilo ma c'è quella globale, migriamola
+                if (!stored && window._activeProfileId) {
+                    const globalStored = localStorage.getItem('customTransactionAccounts');
+                    if (globalStored) {
+                        stored = globalStored;
+                        localStorage.setItem(profileKey, globalStored);
+                    }
+                }
                 if (stored) {
                     const parsed = JSON.parse(stored);
                     return parsed.map(a => ({
@@ -953,7 +948,10 @@
         };
 
         const saveCustomTransactionAccounts = (accs) => {
-            localStorage.setItem('customTransactionAccounts', JSON.stringify(accs));
+            const profileKey = window._activeProfileId
+                ? `customTransactionAccounts_${window._activeProfileId}`
+                : 'customTransactionAccounts';
+            localStorage.setItem(profileKey, JSON.stringify(accs));
         };
 
         // ============ TAG SYSTEM ============
@@ -1041,6 +1039,7 @@
                     setAccounts(parsed);
                     const savedActiveId = localStorage.getItem('moneyTrackerActiveAccount');
                     setActiveAccountId(savedActiveId || parsed[0]?.id);
+                    window._activeProfileId = savedActiveId || parsed[0]?.id;
                 } else {
                     // Migra dati esistenti → account famiglia + crea personale
                     const oldTransactions = localStorage.getItem('moneyTrackerData');
@@ -1054,6 +1053,7 @@
                     
                     setAccounts(defaultAccounts);
                     setActiveAccountId('famiglia');
+                    window._activeProfileId = 'famiglia';
                     localStorage.setItem('moneyTrackerAccounts', JSON.stringify(defaultAccounts));
                     localStorage.setItem('moneyTrackerActiveAccount', 'famiglia');
                     
@@ -1354,6 +1354,9 @@
                 return `${startDate.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })} - ${endDate.toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })}`;
             };
 
+		    // Focus della schermata categorie: 'expense' (uscite) o 'income' (entrate)
+		    const [categoryFocus, setCategoryFocus] = useState('expense');
+
             const getMonthlyExpensesByCategory = () => {
                 const monthlyTransactions = getCurrentMonthTransactions();
                 const expenses = {};
@@ -1369,6 +1372,18 @@
                 
                 return expenses;
             };
+
+		    const getMonthlyIncomeByCategory = () => {
+		        const monthlyTransactions = getCurrentMonthTransactions();
+		        const incomes = {};
+		        monthlyTransactions
+		            .filter(t => t.type === 'income')
+		            .forEach(t => {
+		                if (!incomes[t.category]) incomes[t.category] = 0;
+		                incomes[t.category] += t.amount;
+		            });
+		        return incomes;
+		    };
 
             const addTransaction = (transaction) => {
                 setTransactions([transaction, ...transactions]);
@@ -1401,6 +1416,7 @@
 
             // ============ GESTIONE ACCOUNT ============
             const switchAccount = (accountId) => {
+                window._activeProfileId = accountId;
                 setActiveAccountId(accountId);
                 localStorage.setItem('moneyTrackerActiveAccount', accountId);
                 setCurrentPage('categories'); // Torna a home quando cambi account
@@ -1506,7 +1522,7 @@
             };
 
             // IMPORT DA 1MONEY CSV - versione completa senza perdita dati
-            const import1MoneyCSV = async (csvText) => {
+            const import1MoneyCSV = (csvText) => {
                 try {
                     const lines = csvText.split('\n').filter(line => line.trim());
                     if (lines.length < 2) throw new Error('File CSV vuoto o non valido');
@@ -1679,26 +1695,8 @@
                     }
 
                     // Aggiungi transazioni (più recenti prima)
-                    // Salva transazioni su IndexedDB per l'account principale attivo
                     importedTransactions.sort((a, b) => new Date(b.date) - new Date(a.date));
-
-                    const existing = await window.loadTransactionsFromDB(activeAccountId);
-                    const merged = [...importedTransactions, ...(existing || [])];
-
-                    // dedup per id
-                    const seen = {};
-                    const unique = [];
-                    merged.forEach(t => {
-                        const k = String(t.id);
-                        if (!seen[k]) { seen[k] = true; unique.push(t); }
-                    });
-                    unique.sort((a,b) => new Date(b.date) - new Date(a.date));
-
-                    await window.saveTransactionsToDB(activeAccountId, unique);
-                    setTransactions(unique);
-                    setCategoriesVersion(v => v + 1);
-
-                    
+                    setTransactions(prev => [...importedTransactions, ...prev]);
 
                     return {
                         success: true,
@@ -1718,15 +1716,9 @@
                 const file = event.target.files[0];
                 if (!file) return;
                 
-                // Conferma import (non cancella i dati esistenti: aggiunge e/o crea categorie/conti mancanti)
-                if (!window.confirm("Import CSV 1Money:\n\n• Verranno importate le transazioni del file\n• Verranno create categorie/conti mancanti\n• I dati esistenti NON verranno cancellati\n\nContinuare?")) {
-                    event.target.value = "";
-                    return;
-                }
-                
                 const reader = new FileReader();
-                reader.onload = async (e) => {
-                    const result = await import1MoneyCSV(e.target.result);
+                reader.onload = (e) => {
+                    const result = import1MoneyCSV(e.target.result);
                     if (result.success) {
                         let msg = `✅ Import completato!\n\n`;
                         msg += `📥 Transazioni importate: ${result.imported}\n`;
@@ -1916,25 +1908,20 @@
                         chartInstance.current.destroy();
                     }
 
-                    const byCategory = (categoryFocus === 'income')
-                            ? getMonthlyIncomeByCategory()
-                            : getMonthlyExpensesByCategory();
+                    const expensesByCategory = getMonthlyExpensesByCategory();
 
-                        const cats = getCategoriesFromStorage();
-                        const catList = (categoryFocus === 'income') ? cats.income : cats.expense;
+                    const labels = Object.keys(expensesByCategory).map(catId => {
+                        const cat = getCategoriesFromStorage().expense.find(c => c.id === catId);
+                        return cat ? cat.name : catId;
+                    });
 
-                        const labels = Object.keys(byCategory).map(catId => {
-                            const cat = catList.find(c => c.id === catId);
-                            return cat ? cat.name : catId;
-                        });
+                    const data = Object.values(expensesByCategory);
+                    const colors = Object.keys(expensesByCategory).map(catId => {
+                        const cat = getCategoriesFromStorage().expense.find(c => c.id === catId);
+                        return cat ? cat.color : '#999';
+                    });
 
-                        const data = Object.values(byCategory);
-                        const colors = Object.keys(byCategory).map(catId => {
-                            const cat = catList.find(c => c.id === catId);
-                            return cat ? cat.color : '#999';
-                        });
-
-if (data.length > 0) {
+                    if (data.length > 0) {
                         chartInstance.current = new Chart(ctx, {
                             type: 'doughnut',
                             data: {
@@ -1957,11 +1944,11 @@ if (data.length > 0) {
                         });
                     }
                 }
-            }, [currentPage, filteredTransactions, selectedAccount, settings.monthStartDay, viewMode, periodOffset, categoryFocus]);
+		    }, [currentPage, filteredTransactions, selectedAccount, settings.monthStartDay, viewMode, periodOffset, categoryFocus]);
 
-            // Grafico centrale categorie (stile 1Money)
-            useEffect(() => {
-                if (currentPage === 'categories') {
+		    // Grafico centrale categorie (stile 1Money)
+		    useEffect(() => {
+		        if (currentPage === 'categories') {
                     setTimeout(() => {
                         const canvas = document.getElementById('categoryChart');
                         if (!canvas) return;
@@ -1973,18 +1960,19 @@ if (data.length > 0) {
                             window.categoryChartInstance.destroy();
                         }
 
-                        const expensesByCategory = getMonthlyExpensesByCategory();
+		                const byCategory = categoryFocus === 'income' ? getMonthlyIncomeByCategory() : getMonthlyExpensesByCategory();
+		                const catList = categoryFocus === 'income' ? getCategoriesFromStorage().income : getCategoriesFromStorage().expense;
 
-                        const labels = Object.keys(byCategory).map(catId => {
-                            const cat = getCategoriesFromStorage().expense.find(c => c.id === catId);
-                            return cat ? cat.name : catId;
-                        });
+		                const labels = Object.keys(byCategory).map(catId => {
+		                    const cat = catList.find(c => c.id === catId);
+		                    return cat ? cat.name : catId;
+		                });
 
-                        const data = Object.values(byCategory);
-                        const colors = Object.keys(byCategory).map(catId => {
-                            const cat = getCategoriesFromStorage().expense.find(c => c.id === catId);
-                            return cat ? cat.color : '#999';
-                        });
+		                const data = Object.values(byCategory);
+		                const colors = Object.keys(byCategory).map(catId => {
+		                    const cat = catList.find(c => c.id === catId);
+		                    return cat ? cat.color : '#999';
+		                });
 
                         if (data.length > 0) {
                             window.categoryChartInstance = new Chart(ctx, {
@@ -2308,12 +2296,22 @@ if (data.length > 0) {
                     <div className="balance-card">
                         <div className="balance-label">Saldo {formatPeriodDisplay()}</div>
                         <div className="balance-amount">€ {balance.toFixed(2)}</div>
-                        <div className="stats-row" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
-                            <div className="stat-box income">
+		                <div className="stats-row" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
+		                    <div
+		                        className="stat-box income"
+		                        onClick={() => { setCurrentPage('categories'); setCategoryFocus('income'); }}
+		                        style={{ cursor: 'pointer' }}
+		                        title="Vedi categorie Entrate"
+		                    >
                                 <div className="stat-label">Entrate</div>
                                 <div className="stat-value income">€ {totalIncome.toFixed(2)}</div>
                             </div>
-                            <div className="stat-box expense">
+		                    <div
+		                        className="stat-box expense"
+		                        onClick={() => { setCurrentPage('categories'); setCategoryFocus('expense'); }}
+		                        style={{ cursor: 'pointer' }}
+		                        title="Vedi categorie Uscite"
+		                    >
                                 <div className="stat-label">Uscite</div>
                                 <div className="stat-value expense">€ {totalExpense.toFixed(2)}</div>
                             </div>
@@ -2344,13 +2342,16 @@ if (data.length > 0) {
                         />
                     )}
 
-                    {currentPage === 'categories' && (
-                        <CategoriesView 
-                            expenses={getMonthlyExpensesByCategory()}
-                            budgets={budgets}
-                            onCategoryClick={handleCategoryClick}
-                        />
-                    )}
+		            {currentPage === 'categories' && (
+		                <CategoriesView 
+		                    mode={categoryFocus}
+		                    expenses={categoryFocus === 'income' ? getMonthlyIncomeByCategory() : getMonthlyExpensesByCategory()}
+		                    budgets={categoryFocus === 'income' ? {} : budgets}
+		                    totalIncome={totalIncome}
+		                    totalExpense={totalExpense}
+		                    onCategoryClick={handleCategoryClick}
+		                />
+		            )}
 
                     {currentPage === 'home' && (
                         <div
@@ -2431,13 +2432,13 @@ if (data.length > 0) {
                                     </button>
                                     {transfersOnlyFilter && (
                                         <span style={{ fontSize: '12px', color: '#666' }}>
-                                            {((viewMode === "all") ? filteredTransactions : periodTransactions).filter(t => t.isTransfer).length} trasferimenti
+                                            {filteredTransactions.filter(t => t.isTransfer).length} trasferimenti
                                         </span>
                                     )}
                                 </div>
                                 
                                 {(() => {
-                                    let displayTransactions = (viewMode === "all") ? filteredTransactions : periodTransactions;
+                                    let displayTransactions = periodTransactions;
                                     if (categoryFilter) displayTransactions = displayTransactions.filter(t => t.category === categoryFilter);
                                     if (transfersOnlyFilter) displayTransactions = displayTransactions.filter(t => t.isTransfer);
                                     
@@ -3361,7 +3362,7 @@ if (data.length > 0) {
             );
         }
 
-        function CategoriesView({ expenses, budgets, onCategoryClick }) {
+		function CategoriesView({ expenses, budgets, onCategoryClick, mode = 'expense', totalIncome = 0, totalExpense = 0 }) {
             const [categoryOrder, setCategoryOrder] = React.useState([]);
             const [draggedItem, setDraggedItem] = React.useState(null);
             const [dragOverItem, setDragOverItem] = React.useState(null);
@@ -3374,45 +3375,53 @@ if (data.length > 0) {
                 setCats(getCategoriesFromStorage());
             }, []);
 
-            React.useEffect(() => {
-                const savedOrder = localStorage.getItem('categoryOrder');
+		    const orderKey = mode === 'income' ? 'categoryOrder_income' : 'categoryOrder';
+
+		    React.useEffect(() => {
+		        const savedOrder = localStorage.getItem(orderKey);
                 if (savedOrder) {
                     setCategoryOrder(JSON.parse(savedOrder));
                 } else {
-                    setCategoryOrder(cats.expense.map(c => c.id));
+		            setCategoryOrder((cats[mode] || []).map(c => c.id));
                 }
-            }, []);
+		    }, [orderKey, mode]);
 
-            React.useEffect(() => {
-                if (categoryOrder.length > 0) {
-                    localStorage.setItem('categoryOrder', JSON.stringify(categoryOrder));
-                }
-            }, [categoryOrder]);
+		    React.useEffect(() => {
+		        if (categoryOrder.length > 0) {
+		            localStorage.setItem(orderKey, JSON.stringify(categoryOrder));
+		        }
+		    }, [categoryOrder, orderKey]);
 
-            const monthlyExpenses = expenses;
-            const totalExpense = Object.values(monthlyExpenses).reduce((acc, val) => acc + val, 0);
-            const totalBudget = Object.values(budgets).reduce((acc, val) => acc + val, 0);
+		    const dataByCategory = expenses || {};
+		    const primaryTotal = Object.values(dataByCategory).reduce((acc, val) => acc + val, 0);
+		    const totalBudget = mode === 'expense' ? Object.values(budgets || {}).reduce((acc, val) => acc + val, 0) : 0;
 
-            const activeCats = cats.expense.filter(c => !c.archived);
-            const archivedCats = cats.expense.filter(c => c.archived);
+		    const activeCats = (cats[mode] || []).filter(c => !c.archived);
+		    const archivedCats = (cats[mode] || []).filter(c => c.archived);
 
             // Ordina le categorie attive
-            const orderedCategories = categoryOrder
-                .map(id => activeCats.find(c => c.id === id))
-                .filter(Boolean);
+		    const orderedCategories = categoryOrder
+		        .map(id => activeCats.find(c => c.id === id))
+		        .filter(Boolean);
             activeCats.forEach(cat => {
                 if (!categoryOrder.includes(cat.id)) orderedCategories.push(cat);
             });
 
             // Archivia/ripristina categoria
-            const toggleArchive = (catId) => {
-                const updated = getCategoriesFromStorage();
-                updated.expense = updated.expense.map(c =>
-                    c.id === catId ? { ...c, archived: !c.archived } : c
-                );
-                saveCategoriestoStorage(updated);
-                setCats(getCategoriesFromStorage());
-            };
+		    const toggleArchive = (catId) => {
+		        const updated = getCategoriesFromStorage();
+		        updated[mode] = (updated[mode] || []).map(c =>
+		            c.id === catId ? { ...c, archived: !c.archived } : c
+		        );
+		        saveCategoriestoStorage(updated);
+		        setCats(getCategoriesFromStorage());
+		    };
+
+		    const isIncomeMode = mode === 'income';
+		    const primaryLabel = isIncomeMode ? 'Entrate' : 'Spese';
+		    const primaryAmount = isIncomeMode ? totalIncome : totalExpense;
+		    const secondaryLabel = isIncomeMode ? 'Spese' : 'Entrate';
+		    const secondaryAmount = isIncomeMode ? totalExpense : totalIncome;
 
             // Desktop drag
             const handleDragStart = (e, categoryId) => {
@@ -3474,17 +3483,21 @@ if (data.length > 0) {
                     <div className="chart-center-container">
                         <canvas id="categoryChart" style={{ maxHeight: '280px' }}></canvas>
                         <div className="chart-center-info">
-                            <div className="chart-center-label">Spese</div>
-                            <div className="chart-center-amount">{totalExpense.toFixed(2)} €</div>
-                            <div className="chart-center-budget">{totalBudget.toFixed(0)} €</div>
+		                    <div className="chart-center-label">{primaryLabel}</div>
+		                    <div className="chart-center-amount" style={{ color: isIncomeMode ? '#4CAF50' : '#f44336' }}>
+		                        {primaryAmount.toFixed(2)} €
+		                    </div>
+		                    <div className="chart-center-budget" style={{ color: isIncomeMode ? '#f44336' : '#4CAF50' }}>
+		                        {secondaryLabel}: {secondaryAmount.toFixed(2)} €
+		                    </div>
                         </div>
                     </div>
 
                     {/* Categorie attive */}
                     <div className="categories-grid">
-                        {orderedCategories.map(category => {
-                            const amount = monthlyExpenses[category.id] || 0;
-                            const budget = budgets[category.id] || 0;
+		            {orderedCategories.map(category => {
+		                const amount = dataByCategory[category.id] || 0;
+		                const budget = (mode === 'expense' && budgets) ? (budgets[category.id] || 0) : 0;
                             const exceeded = budget > 0 && amount > budget;
                             const remaining = budget - amount;
                             const isDragging = draggedItem === category.id;
@@ -3530,11 +3543,11 @@ if (data.length > 0) {
                                     <div className="category-circle" style={{ background: category.color }}>
                                         {category.icon}
                                     </div>
-                                    <div className="category-amount" style={{ color: exceeded ? '#f44336' : category.color }}>
+		                <div className="category-amount" style={{ color: exceeded ? '#f44336' : category.color }}>
                                         {amount.toFixed(0)} €
                                     </div>
                                     <div className="category-name-small">{category.name}</div>
-                                    {budget > 0 && (
+		                {mode === 'expense' && budget > 0 && (
                                         <div style={{ fontSize: exceeded ? '10px' : '9px', color: exceeded ? '#f44336' : '#999', fontWeight: exceeded ? 'bold' : 'normal', marginTop: '2px' }}>
                                             {exceeded
                                                 ? <span style={{ color: '#f44336', fontWeight: 'bold' }}>+{Math.abs(remaining).toFixed(0)} €</span>
