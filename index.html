@@ -2334,6 +2334,7 @@
                     {currentPage === 'accounts' && (
                         <AccountsView
                             transactions={filteredTransactions}
+                            activeProfileId={activeAccountId}
                             onAdjustBalance={(accId, amount, note) => {
                                 const t = {
                                     id: Date.now(),
@@ -2693,7 +2694,7 @@
         }
 
         // ============ ACCOUNTS VIEW ============
-        function AccountsView({ transactions, onAdjustBalance, onUpdateAccount }) {
+        function AccountsView({ transactions, onAdjustBalance, onUpdateAccount, activeProfileId }) {
             const [accs, setAccs] = React.useState([]);
             const [selectedAcc, setSelectedAcc] = React.useState(null);
             const [showAdjust, setShowAdjust] = React.useState(false);
@@ -2714,7 +2715,8 @@
 
             const reload = () => setAccs([...getCustomTransactionAccounts()]);
 
-            React.useEffect(() => { reload(); }, []);
+            // Ricarica i conti ogni volta che cambia il profilo attivo
+            React.useEffect(() => { reload(); }, [activeProfileId]);
 
             // Calcola saldo per ogni conto
             const getSaldo = (accId) => {
