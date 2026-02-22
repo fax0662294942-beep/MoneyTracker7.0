@@ -1396,6 +1396,10 @@
                 }
             };
 
+            const editTransaction = (updated) => {
+                setTransactions(prev => prev.map(t => t.id === updated.id ? updated : t));
+            };
+
             const setBudget = (category, amount) => {
                 const { startDate } = getPeriodDates();
                 const newB = { ...budgets, [category]: parseFloat(amount) };
@@ -2452,6 +2456,7 @@
                                         <TransactionList 
                                             transactions={displayTransactions} 
                                             onDelete={deleteTransaction}
+                                            onEdit={editTransaction}
                                         />
                                     );
                                 })()}
@@ -3085,12 +3090,13 @@
             );
         }
 
-        function TransactionList({ transactions, onDelete }) {
+        function TransactionList({ transactions, onDelete, onEdit }) {
+            const [editingTransaction, setEditingTransaction] = React.useState(null);
+
             const getCategoryInfo = (type, categoryId) => {
                 const cats = getCategoriesFromStorage();
                 const cat = (cats[type] || []).find(c => c.id === categoryId);
                 if (cat) return cat;
-                // Categoria non trovata: mostra il nome dell'id importato in modo leggibile
                 if (categoryId && categoryId.startsWith('imported_cat_')) {
                     return { name: categoryId.replace('imported_cat_', 'Cat.'), icon: '📦', color: '#B0BEC5' };
                 }
@@ -3103,13 +3109,68 @@
                 return acc || { name: accountId || 'Sconosciuto', icon: '❓' };
             };
 
+            // Long-press logic
+            const pressTimer = React.useRef(null);
+            const pressStartPos = React.useRef({ x: 0, y: 0 });
+            const didLongPress = React.useRef(false);
+
+            const startPress = (e, transaction) => {
+                didLongPress.current = false;
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                pressStartPos.current = { x: clientX, y: clientY };
+                pressTimer.current = setTimeout(() => {
+                    didLongPress.current = true;
+                    setEditingTransaction(transaction);
+                    // Vibrazione feedback su mobile
+                    if (navigator.vibrate) navigator.vibrate(40);
+                }, 500);
+            };
+
+            const cancelPress = (e) => {
+                if (pressTimer.current) {
+                    clearTimeout(pressTimer.current);
+                    pressTimer.current = null;
+                }
+            };
+
+            const movePress = (e) => {
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                const dx = Math.abs(clientX - pressStartPos.current.x);
+                const dy = Math.abs(clientY - pressStartPos.current.y);
+                // Se l'utente sta scrollando, cancella il long-press
+                if (dx > 8 || dy > 8) cancelPress();
+            };
+
+            const handleClick = (e) => {
+                // Blocca il click normale se era un long-press
+                if (didLongPress.current) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+            };
+
             return (
+                <>
                 <ul className="transaction-list">
                     {transactions.map(transaction => {
                         const category = getCategoryInfo(transaction.type, transaction.category);
                         const account = getAccountInfo(transaction.account || 'cash');
                         return (
-                            <li key={transaction.id} className="transaction-item">
+                            <li
+                                key={transaction.id}
+                                className="transaction-item"
+                                onMouseDown={e => startPress(e, transaction)}
+                                onMouseUp={cancelPress}
+                                onMouseLeave={cancelPress}
+                                onMouseMove={movePress}
+                                onTouchStart={e => startPress(e, transaction)}
+                                onTouchEnd={cancelPress}
+                                onTouchMove={movePress}
+                                onClick={handleClick}
+                                style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
+                            >
                                 <div style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
                                     <div 
                                         className="transaction-icon"
@@ -3148,7 +3209,7 @@
                                         {transaction.type === 'income' ? '+' : '-'}€ {transaction.amount.toFixed(2)}
                                     </div>
                                     <button 
-                                        onClick={() => onDelete(transaction.id)}
+                                        onClick={(e) => { e.stopPropagation(); onDelete(transaction.id); }}
                                         style={{
                                             background: 'none',
                                             border: 'none',
@@ -3165,6 +3226,239 @@
                         );
                     })}
                 </ul>
+                {editingTransaction && (
+                    <EditTransactionModal
+                        transaction={editingTransaction}
+                        onClose={() => setEditingTransaction(null)}
+                        onSave={(updated) => {
+                            if (onEdit) onEdit(updated);
+                            setEditingTransaction(null);
+                        }}
+                        onDelete={(id) => {
+                            onDelete(id);
+                            setEditingTransaction(null);
+                        }}
+                    />
+                )}
+                </>
+            );
+        }
+
+        function EditTransactionModal({ transaction, onClose, onSave, onDelete }) {
+            const [type, setType] = React.useState(transaction.type);
+            const [amount, setAmount] = React.useState(String(transaction.amount));
+            const [category, setCategory] = React.useState(transaction.category || '');
+            const [account, setAccount] = React.useState(transaction.account || 'cash');
+            const [note, setNote] = React.useState(transaction.note || '');
+            const [date, setDate] = React.useState(transaction.date ? transaction.date.split('T')[0] : new Date().toISOString().split('T')[0]);
+            const [selectedTags, setSelectedTags] = React.useState(transaction.tags || []);
+            const [newTagInput, setNewTagInput] = React.useState('');
+            const [confirmDelete, setConfirmDelete] = React.useState(false);
+
+            const allAccounts = getAccountsFilter().filter(a => a.id !== 'all');
+            const allCategories = getCategoriesFromStorage();
+            const allTags = getTagsFromStorage();
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (!amount || !category) return;
+                onSave({
+                    ...transaction,
+                    type,
+                    amount: parseFloat(amount),
+                    category,
+                    account,
+                    note,
+                    date: new Date(date).toISOString(),
+                    tags: selectedTags
+                });
+            };
+
+            const toggleTag = (tagId) => {
+                setSelectedTags(prev =>
+                    prev.includes(tagId) ? prev.filter(t => t !== tagId) : [...prev, tagId]
+                );
+            };
+
+            const handleAddNewTag = () => {
+                if (!newTagInput.trim()) return;
+                const tagId = getOrCreateTag(newTagInput.trim());
+                if (tagId && !selectedTags.includes(tagId)) {
+                    setSelectedTags(prev => [...prev, tagId]);
+                }
+                setNewTagInput('');
+            };
+
+            return (
+                <div className="modal" onClick={onClose}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h2 className="modal-title">✏️ Modifica Transazione</h2>
+                            <button className="close-btn" onClick={onClose}>×</button>
+                        </div>
+
+                        <form onSubmit={handleSubmit}>
+                            <div className="type-selector">
+                                <button 
+                                    type="button"
+                                    className={`type-btn expense ${type === 'expense' ? 'active' : ''}`}
+                                    onClick={() => { setType('expense'); setCategory(''); }}
+                                >
+                                    Uscita
+                                </button>
+                                <button 
+                                    type="button"
+                                    className={`type-btn income ${type === 'income' ? 'active' : ''}`}
+                                    onClick={() => { setType('income'); setCategory(''); }}
+                                >
+                                    Entrata
+                                </button>
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Importo (€)</label>
+                                <input 
+                                    type="number" 
+                                    step="0.01"
+                                    className="form-input"
+                                    value={amount}
+                                    onChange={e => setAmount(e.target.value)}
+                                    placeholder="0.00"
+                                    required
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Conto</label>
+                                <select 
+                                    className="form-input"
+                                    value={account}
+                                    onChange={e => setAccount(e.target.value)}
+                                    required
+                                >
+                                    {allAccounts.map(acc => (
+                                        <option key={acc.id} value={acc.id}>
+                                            {acc.icon} {acc.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Categoria</label>
+                                <div className="category-grid">
+                                    {(allCategories[type] || []).map(cat => (
+                                        <button
+                                            key={cat.id}
+                                            type="button"
+                                            className={`category-btn ${category === cat.id ? 'active' : ''}`}
+                                            onClick={() => setCategory(cat.id)}
+                                        >
+                                            <div className="category-icon">{cat.icon}</div>
+                                            <div className="category-name">{cat.name}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Data</label>
+                                <input 
+                                    type="date"
+                                    className="form-input"
+                                    value={date}
+                                    onChange={e => setDate(e.target.value)}
+                                    required
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Note (opzionale)</label>
+                                <input 
+                                    type="text"
+                                    className="form-input"
+                                    value={note}
+                                    onChange={e => setNote(e.target.value)}
+                                    placeholder="Aggiungi una nota..."
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Tag (opzionale)</label>
+                                {allTags.length > 0 && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
+                                        {allTags.map(tag => (
+                                            <button
+                                                key={tag.id}
+                                                type="button"
+                                                onClick={() => toggleTag(tag.id)}
+                                                style={{
+                                                    padding: '4px 10px',
+                                                    borderRadius: '20px',
+                                                    border: '2px solid ' + tag.color,
+                                                    background: selectedTags.includes(tag.id) ? tag.color : 'transparent',
+                                                    color: selectedTags.includes(tag.id) ? 'white' : tag.color,
+                                                    fontSize: '12px',
+                                                    cursor: 'pointer',
+                                                    fontWeight: 'bold'
+                                                }}
+                                            >
+                                                # {tag.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        value={newTagInput}
+                                        onChange={e => setNewTagInput(e.target.value)}
+                                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddNewTag(); } }}
+                                        placeholder="Nuovo tag..."
+                                        style={{ flex: 1, marginBottom: 0 }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={handleAddNewTag}
+                                        style={{ padding: '8px 14px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', whiteSpace: 'nowrap' }}
+                                    >+ Aggiungi</button>
+                                </div>
+                            </div>
+
+                            <button type="submit" className="submit-btn">
+                                💾 Salva Modifiche
+                            </button>
+
+                            {/* Elimina */}
+                            {!confirmDelete ? (
+                                <button
+                                    type="button"
+                                    onClick={() => setConfirmDelete(true)}
+                                    style={{ width: '100%', marginTop: '10px', padding: '12px', background: 'none', border: '1.5px solid #f44336', color: '#f44336', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px' }}
+                                >
+                                    🗑️ Elimina Transazione
+                                </button>
+                            ) : (
+                                <div style={{ marginTop: '10px', padding: '12px', background: '#fff3f3', borderRadius: '10px', border: '1.5px solid #f44336' }}>
+                                    <p style={{ color: '#f44336', fontWeight: 'bold', marginBottom: '10px', textAlign: 'center' }}>Confermi eliminazione?</p>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                        <button
+                                            type="button"
+                                            onClick={() => onDelete(transaction.id)}
+                                            style={{ flex: 1, padding: '10px', background: '#f44336', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+                                        >Sì, elimina</button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setConfirmDelete(false)}
+                                            style={{ flex: 1, padding: '10px', background: '#eee', color: '#333', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+                                        >Annulla</button>
+                                    </div>
+                                </div>
+                            )}
+                        </form>
+                    </div>
+                </div>
             );
         }
 
