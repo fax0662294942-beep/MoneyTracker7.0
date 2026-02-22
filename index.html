@@ -3286,8 +3286,8 @@
                 const clientY = e.touches ? e.touches[0].clientY : e.clientY;
                 const dx = Math.abs(clientX - pressStartPos.current.x);
                 const dy = Math.abs(clientY - pressStartPos.current.y);
-                // Se l'utente sta scrollando, cancella il long-press
-                if (dx > 8 || dy > 8) cancelPress();
+                // Solo se si sta davvero scrollando (soglia più alta per mobile)
+                if (dx > 15 || dy > 15) cancelPress();
             };
 
             const handleClick = (e) => {
@@ -3314,11 +3314,14 @@
                                 onMouseMove={movePress}
                                 onTouchStart={e => startPress(e, transaction)}
                                 onTouchEnd={(e) => {
-                                    // Non cancellare — il timer gestisce già il long-press
-                                    // Blocca solo il click successivo se era long-press
                                     if (didLongPress.current) {
+                                        // Era long-press: blocca il click successivo
                                         e.preventDefault();
                                         e.stopPropagation();
+                                        didLongPress.current = false;
+                                    } else {
+                                        // Era tap normale: cancella il timer
+                                        cancelPress();
                                     }
                                 }}
                                 onTouchMove={movePress}
