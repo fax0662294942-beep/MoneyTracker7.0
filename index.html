@@ -2878,10 +2878,11 @@
                             accLongPressed.current = false;
                             const t = e.touches[0];
                             accPressPos.current = { x: t.clientX, y: t.clientY };
+                            // Salva rect subito, prima che il timeout scatti
+                            const rect = e.currentTarget.getBoundingClientRect();
                             accPressTimer.current = setTimeout(() => {
                                 accLongPressed.current = true;
                                 if (navigator.vibrate) navigator.vibrate(40);
-                                const rect = e.currentTarget.getBoundingClientRect();
                                 setAccMenu({ acc, x: rect.left + rect.width / 2, y: rect.bottom + 5 });
                             }, 500);
                         }}
@@ -3305,7 +3306,14 @@
                                 onMouseLeave={cancelPress}
                                 onMouseMove={movePress}
                                 onTouchStart={e => startPress(e, transaction)}
-                                onTouchEnd={cancelPress}
+                                onTouchEnd={(e) => {
+                                    // Non cancellare — il timer gestisce già il long-press
+                                    // Blocca solo il click successivo se era long-press
+                                    if (didLongPress.current) {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                    }
+                                }}
                                 onTouchMove={movePress}
                                 onClick={handleClick}
                                 style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
