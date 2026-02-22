@@ -1872,8 +1872,14 @@
                 showManageAccountsModal, showCategoryMenu, showEditCategoryModal, categoryFilter]);
             const handleCategoryClick = (category, event) => {
                 event.stopPropagation();
-                // Tap singolo -> aggiungi movimento direttamente
-                setShowModal({ preselectedCategory: category.id });
+                // Tap singolo -> apre menu contestuale
+                const rect = event.currentTarget.getBoundingClientRect();
+                setShowCategoryMenu({
+                    categoryId: category.id,
+                    category: category,
+                    x: rect.left + rect.width / 2,
+                    y: rect.bottom + 5
+                });
             };
 
             const handleCategoryLongPress = (category, event) => {
@@ -2778,6 +2784,7 @@
             const accPressTimer = React.useRef(null);
             const accLongPressed = React.useRef(false);
             const accPressPos = React.useRef({ x: 0, y: 0 });
+            const [accSortMode, setAccSortMode] = React.useState(false);
 
             const TIPOLOGIE = [
                 { id: 'normale', label: 'Normale', icon: '🏦' },
@@ -2872,33 +2879,24 @@
                     <div
                         key={acc.id}
                         data-accid={acc.id}
-                        onClick={() => { if (!accLongPressed.current) onAddMovementForAccount && onAddMovementForAccount(acc.id); }}
-                        onTouchStart={(e) => {
-                            e.stopPropagation();
-                            accLongPressed.current = false;
-                            const t = e.touches[0];
-                            accPressPos.current = { x: t.clientX, y: t.clientY };
-                            // Salva rect subito, prima che il timeout scatti
+                        onClick={(e) => {
+                            if (accSortMode) return;
                             const rect = e.currentTarget.getBoundingClientRect();
-                            accPressTimer.current = setTimeout(() => {
-                                accLongPressed.current = true;
-                                if (navigator.vibrate) navigator.vibrate(40);
-                                setAccMenu({ acc, x: rect.left + rect.width / 2, y: rect.bottom + 5 });
-                            }, 500);
+                            setAccMenu({ acc, x: rect.left + rect.width / 2, y: rect.bottom + 5 });
+                        }}
+                        onTouchStart={(e) => {
+                            if (accSortMode) { handleTouchStart(e, acc.id); return; }
+                            accPressPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
                         }}
                         onTouchMove={(e) => {
+                            if (accSortMode) { handleTouchMove(e); return; }
                             const t = e.touches[0];
                             if (Math.abs(t.clientX - accPressPos.current.x) > 8 || Math.abs(t.clientY - accPressPos.current.y) > 8) {
-                                clearTimeout(accPressTimer.current);
+                                accLongPressed.current = true; // considera scroll, non tap
                             }
                         }}
                         onTouchEnd={(e) => {
-                            clearTimeout(accPressTimer.current);
-                            if (accLongPressed.current) {
-                                e.preventDefault();
-                                e.stopPropagation();
-                            }
-                            accLongPressed.current = false;
+                            if (accSortMode) { handleTouchEnd(e); return; }
                         }}
                         style={{
                             background: 'white',
@@ -2966,6 +2964,7 @@
                             {menuBtn(() => { setAccMenu(null); onViewMovementsForAccount && onViewMovementsForAccount(acc.id); }, '📋', 'Movimenti')}
                             {menuBtn(() => { setAccMenu(null); setEditingAcc(acc); }, '✏️', 'Modifica conto')}
                             {menuBtn(() => { setAccMenu(null); setSelectedAcc(acc); setShowAdjust(true); }, '⚖️', 'Aggiusta saldo')}
+                            {menuBtn(() => { setAccMenu(null); setAccSortMode(true); }, '↕️', 'Sposta (riordina)')}
                         </div>
                     </div>
                 );
@@ -3163,6 +3162,14 @@
                             {activeAccs.filter(a => a.includeInTotal !== false).length} conti inclusi
                         </div>
                     </div>
+
+                    {/* Barra modalità riordino conti */}
+                    {accSortMode && (
+                        <div style={{ margin: '0 0 10px', padding: '10px 16px', background: '#667eea', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'white', fontSize: '13px' }}>
+                            <span>✋ Trascina per riordinare</span>
+                            <button onClick={() => setAccSortMode(false)} style={{ background: 'white', color: '#667eea', border: 'none', borderRadius: '6px', padding: '4px 10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Fine</button>
+                        </div>
+                    )}
 
                     {/* Lista per tipologia */}
                     {TIPOLOGIE.map(tip => {
