@@ -4979,26 +4979,15 @@
                                         onClick={() => {
                                             if (window.confirm(`🔴 RESET COMPLETO\n\nStai per cancellare TUTTO: transazioni, categorie, conti e impostazioni.\n\nQuesta operazione è IRREVERSIBILE.\n\nSei sicuro?`)) {
                                                 if (window.confirm(`⛔ ULTIMA CONFERMA\n\nTutto verrà eliminato e l'app tornerà alle impostazioni di fabbrica.\n\nProcedere?`)) {
-                                                    // Cancella dati account attivo
-                                                    const prefix = `account_${activeAccountId}_`;
-                                                    window.deleteTransactionsFromDB(activeAccountId);
-                                                    // Cancella tutti i budget per periodo
-                                                    const keysToDelete = [];
-                                                    for (let i = 0; i < localStorage.length; i++) {
-                                                        const k = localStorage.key(i);
-                                                        if (k && k.startsWith(prefix + 'budget_')) keysToDelete.push(k);
-                                                    }
-                                                    keysToDelete.forEach(k => localStorage.removeItem(k));
-                                                    localStorage.removeItem(prefix + 'budgets'); // legacy
-                                                    localStorage.removeItem(prefix + 'settings');
-                                                    localStorage.removeItem(prefix + 'categoryOrder');
-                                                    localStorage.removeItem(prefix + 'customCategories');
-                                                    // Cancella dati globali
-                                                    localStorage.removeItem('customCategories_v2');
-                                                    localStorage.removeItem('customTransactionAccounts');
-                                                    localStorage.removeItem('categoryOrder');
-                                                    onClose();
-                                                    window.location.reload();
+                                                    // Cancella IndexedDB per TUTTI i profili
+                                                    const allProfiles = JSON.parse(localStorage.getItem('moneyTrackerAccounts') || '[]');
+                                                    const profileIds = [...new Set([...allProfiles.map(a => a.id), activeAccountId])];
+                                                    const deletePromises = profileIds.map(id => window.deleteTransactionsFromDB(id).catch(() => {}));
+                                                    Promise.all(deletePromises).then(() => {
+                                                        // Cancella TUTTO il localStorage in un colpo solo
+                                                        localStorage.clear();
+                                                        window.location.reload();
+                                                    });
                                                 }
                                             }
                                         }}
