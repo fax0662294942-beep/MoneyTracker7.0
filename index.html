@@ -2872,26 +2872,9 @@
                     <div
                         key={acc.id}
                         data-accid={acc.id}
-                        draggable="true"
-                        onDragStart={e => handleDragStart(e, acc.id)}
-                        onDragOver={e => handleDragOver(e, acc.id)}
-                        onDrop={e => handleDrop(e, acc.id)}
-                        onDragEnd={() => { setDraggedId(null); setDragOverId(null); }}
-                        onTouchStart={e => handleTouchStart(e, acc.id)}
-                        onTouchMove={handleTouchMove}
-                        onTouchEnd={handleTouchEnd}
                         onClick={() => { if (!accLongPressed.current) onAddMovementForAccount && onAddMovementForAccount(acc.id); }}
-                        onMouseDown={(e) => {
-                            accLongPressed.current = false;
-                            accPressTimer.current = setTimeout(() => {
-                                accLongPressed.current = true;
-                                const rect = e.currentTarget.getBoundingClientRect();
-                                setAccMenu({ acc, x: rect.left + rect.width / 2, y: rect.bottom + 5 });
-                            }, 500);
-                        }}
-                        onMouseUp={() => clearTimeout(accPressTimer.current)}
-                        onMouseLeave={() => clearTimeout(accPressTimer.current)}
                         onTouchStart={(e) => {
+                            e.stopPropagation();
                             accLongPressed.current = false;
                             const t = e.touches[0];
                             accPressPos.current = { x: t.clientX, y: t.clientY };
@@ -2901,16 +2884,21 @@
                                 const rect = e.currentTarget.getBoundingClientRect();
                                 setAccMenu({ acc, x: rect.left + rect.width / 2, y: rect.bottom + 5 });
                             }, 500);
-                            handleTouchStart(e, acc.id);
                         }}
                         onTouchMove={(e) => {
                             const t = e.touches[0];
                             if (Math.abs(t.clientX - accPressPos.current.x) > 8 || Math.abs(t.clientY - accPressPos.current.y) > 8) {
                                 clearTimeout(accPressTimer.current);
                             }
-                            handleTouchMove(e);
                         }}
-                        onTouchEnd={(e) => { clearTimeout(accPressTimer.current); handleTouchEnd(e); }}
+                        onTouchEnd={(e) => {
+                            clearTimeout(accPressTimer.current);
+                            if (accLongPressed.current) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                            }
+                            accLongPressed.current = false;
+                        }}
                         style={{
                             background: 'white',
                             borderRadius: '14px',
