@@ -3995,8 +3995,10 @@
                                     onTouchEnd={(e) => {
                                         clearTimeout(catPressTimer.current);
                                         if (sortMode) { handleTouchEnd(e); return; }
-                                        if (!catLongPressed.current) {
-                                            onCategoryClick && onCategoryClick(category, e);
+                                        // Il click viene gestito da onClick, qui blocchiamo solo il long-press
+                                        if (catLongPressed.current) {
+                                            e.preventDefault();
+                                            e.stopPropagation();
                                         }
                                         catLongPressed.current = false;
                                     }}
