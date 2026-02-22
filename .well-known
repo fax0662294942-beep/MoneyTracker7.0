@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "io.github.fax0662294942_beep3.twa",
+    "sha256_cert_fingerprints": ["0A:A1:28:CA:5C:74:24:E0:8A:BD:D3:E6:5F:1B:9C:DF:A8:DB:61:58:4D:91:E9:13:25:B2:23:92:09:46:6A:B7"]
+  }
+}]
