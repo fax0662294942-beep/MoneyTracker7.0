@@ -1050,6 +1050,7 @@
             const [showModal, setShowModal] = useState(false);
             const [showBudgetModal, setShowBudgetModal] = useState(false);
             const [categorySortMode, setCategorySortMode] = useState(false);
+            const [editingTransaction, setEditingTransaction] = useState(null);
             const [showSettingsModal, setShowSettingsModal] = useState(false);
             const [showCategoryMenu, setShowCategoryMenu] = useState(null); // {categoryId, x, y}
             const [showEditCategoryModal, setShowEditCategoryModal] = useState(null); // categoryId
@@ -2541,6 +2542,7 @@
                                             transactions={displayTransactions} 
                                             onDelete={deleteTransaction}
                                             onEdit={editTransaction}
+                                            onLongPress={(t) => setEditingTransaction(t)}
                                         />
                                     );
                                 })()}
@@ -2632,6 +2634,21 @@
                             onAdd={addTransaction}
                             preselectedCategory={typeof showModal === 'object' ? showModal.preselectedCategory : null}
                             preselectedAccount={typeof showModal === 'object' ? showModal.preselectedAccount : null}
+                        />
+                    )}
+
+                    {editingTransaction && (
+                        <EditTransactionModal
+                            transaction={editingTransaction}
+                            onClose={() => setEditingTransaction(null)}
+                            onSave={(updated) => {
+                                editTransaction(updated);
+                                setEditingTransaction(null);
+                            }}
+                            onDelete={(id) => {
+                                deleteTransaction(id);
+                                setEditingTransaction(null);
+                            }}
                         />
                     )}
 
@@ -3237,7 +3254,7 @@
             );
         }
 
-        function TransactionList({ transactions, onDelete, onEdit }) {
+        function TransactionList({ transactions, onDelete, onEdit, onLongPress }) {
             const [editingTransaction, setEditingTransaction] = React.useState(null);
 
             const getCategoryInfo = (type, categoryId) => {
@@ -3268,9 +3285,10 @@
                 pressStartPos.current = { x: clientX, y: clientY };
                 pressTimer.current = setTimeout(() => {
                     didLongPress.current = true;
-                    setEditingTransaction(transaction);
-                    // Vibrazione feedback su mobile
                     if (navigator.vibrate) navigator.vibrate(40);
+                    // Usa il callback esterno se disponibile (evita z-index issues)
+                    if (onLongPress) onLongPress(transaction);
+                    else setEditingTransaction(transaction);
                 }, 500);
             };
 
