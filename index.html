@@ -206,7 +206,7 @@
         
         .category-card {
             text-align: center;
-            cursor: move;
+            cursor: pointer;
             transition: all 0.3s;
             padding: 5px;
             border-radius: 10px;
@@ -1049,6 +1049,7 @@
             const [customDateRange, setCustomDateRange] = useState({ start: null, end: null });
             const [showModal, setShowModal] = useState(false);
             const [showBudgetModal, setShowBudgetModal] = useState(false);
+            const [categorySortMode, setCategorySortMode] = useState(false);
             const [showSettingsModal, setShowSettingsModal] = useState(false);
             const [showCategoryMenu, setShowCategoryMenu] = useState(null); // {categoryId, x, y}
             const [showEditCategoryModal, setShowEditCategoryModal] = useState(null); // categoryId
@@ -1876,9 +1877,8 @@
             };
 
             const handleCategoryLongPress = (category, event) => {
-                event.stopPropagation();
                 if (navigator.vibrate) navigator.vibrate(40);
-                const rect = event.currentTarget.getBoundingClientRect();
+                const rect = event.currentTarget ? event.currentTarget.getBoundingClientRect() : { left: 100, width: 100, bottom: 200 };
                 setShowCategoryMenu({
                     categoryId: category.id,
                     category: category,
@@ -2430,6 +2430,8 @@
 		                    totalExpense={totalExpense}
 		                    onCategoryClick={handleCategoryClick}
 		                    onCategoryLongPress={handleCategoryLongPress}
+		                    sortMode={categorySortMode}
+		                    setSortMode={setCategorySortMode}
 		                />
 		            )}
 
@@ -2637,7 +2639,7 @@
                             onViewMovements={() => handleViewMovements(showCategoryMenu.categoryId)}
                             onEditCategory={() => handleEditCategory(showCategoryMenu.categoryId)}
                             onBudget={() => { setShowCategoryMenu(null); setShowBudgetModal(true); }}
-                            onArchive={() => { setShowCategoryMenu(null); }}
+                            onSort={() => { setShowCategoryMenu(null); setCategorySortMode(true); }}
                         />
                     )}
 
@@ -3805,7 +3807,7 @@
             );
         }
 
-		function CategoriesView({ expenses, budgets, onCategoryClick, onCategoryLongPress, mode = 'expense', totalIncome = 0, totalExpense = 0 }) {
+		function CategoriesView({ expenses, budgets, onCategoryClick, onCategoryLongPress, sortMode, setSortMode, mode = 'expense', totalIncome = 0, totalExpense = 0 }) {
             const [categoryOrder, setCategoryOrder] = React.useState([]);
             const [draggedItem, setDraggedItem] = React.useState(null);
             const [dragOverItem, setDragOverItem] = React.useState(null);
@@ -3817,6 +3819,7 @@
             const catPressTimer = React.useRef(null);
             const catLongPressed = React.useRef(false);
             const catPressPos = React.useRef({ x: 0, y: 0 });
+            // Modalità riordino: gestita dal genitore via props sortMode/setSortMode
 
             React.useEffect(() => {
                 setCats(getCategoriesFromStorage());
@@ -3940,6 +3943,14 @@
                         </div>
                     </div>
 
+                    {/* Barra modalità riordino */}
+                    {sortMode && (
+                        <div style={{ margin: '0 16px 10px', padding: '10px 16px', background: '#667eea', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'white', fontSize: '13px' }}>
+                            <span>✋ Trascina per riordinare</span>
+                            <button onClick={() => setSortMode(false)} style={{ background: 'white', color: '#667eea', border: 'none', borderRadius: '6px', padding: '4px 10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Fine</button>
+                        </div>
+                    )}
+
                     {/* Categorie attive */}
                     <div className="categories-grid">
 		            {orderedCategories.map(category => {
@@ -3955,50 +3966,45 @@
                                     key={category.id}
                                     data-catid={category.id}
                                     className="category-card"
-                                    draggable="true"
-                                    onDragStart={(e) => handleDragStart(e, category.id)}
-                                    onDragOver={(e) => handleDragOver(e, category.id)}
-                                    onDrop={(e) => handleDrop(e, category.id)}
-                                    onDragEnd={() => { setDraggedItem(null); setDragOverItem(null); }}
-                                    onTouchStart={(e) => handleTouchStart(e, category.id)}
-                                    onTouchMove={handleTouchMove}
-                                    onTouchEnd={handleTouchEnd}
                                     onClick={(e) => {
+                                        if (sortMode) return;
                                         if (!catLongPressed.current) onCategoryClick && onCategoryClick(category, e);
                                     }}
-                                    onMouseDown={(e) => {
-                                        catLongPressed.current = false;
-                                        catPressTimer.current = setTimeout(() => {
-                                            catLongPressed.current = true;
-                                            onCategoryLongPress && onCategoryLongPress(category, e);
-                                        }, 500);
-                                    }}
-                                    onMouseUp={() => clearTimeout(catPressTimer.current)}
-                                    onMouseLeave={() => clearTimeout(catPressTimer.current)}
                                     onTouchStart={(e) => {
+                                        e.stopPropagation();
                                         catLongPressed.current = false;
                                         const t = e.touches[0];
                                         catPressPos.current = { x: t.clientX, y: t.clientY };
+                                        if (sortMode) {
+                                            handleTouchStart(e, category.id);
+                                            return;
+                                        }
                                         catPressTimer.current = setTimeout(() => {
                                             catLongPressed.current = true;
                                             if (navigator.vibrate) navigator.vibrate(40);
                                             onCategoryLongPress && onCategoryLongPress(category, e);
                                         }, 500);
-                                        handleTouchStart(e, category.id);
                                     }}
                                     onTouchMove={(e) => {
+                                        if (sortMode) { handleTouchMove(e); return; }
                                         const t = e.touches[0];
-                                        if (Math.abs(t.clientX - catPressPos.current.x) > 8 || Math.abs(t.clientY - catPressPos.current.y) > 8) {
-                                            clearTimeout(catPressTimer.current);
-                                        }
-                                        handleTouchMove(e);
+                                        const dx = Math.abs(t.clientX - catPressPos.current.x);
+                                        const dy = Math.abs(t.clientY - catPressPos.current.y);
+                                        if (dx > 5 || dy > 5) clearTimeout(catPressTimer.current);
                                     }}
-                                    onTouchEnd={(e) => { clearTimeout(catPressTimer.current); handleTouchEnd(e); }}
+                                    onTouchEnd={(e) => {
+                                        clearTimeout(catPressTimer.current);
+                                        if (sortMode) { handleTouchEnd(e); return; }
+                                        if (!catLongPressed.current) {
+                                            onCategoryClick && onCategoryClick(category, e);
+                                        }
+                                        catLongPressed.current = false;
+                                    }}
                                     style={{
                                         opacity: isDragging ? 0.3 : 1,
-                                        transform: isOver ? 'scale(1.06)' : 'scale(1)',
-                                        border: isOver ? '2px dashed #667eea' : '2px solid transparent',
-                                        cursor: 'pointer',
+                                        transform: isOver ? 'scale(1.06)' : sortMode ? 'scale(1.02)' : 'scale(1)',
+                                        border: isOver ? '2px dashed #667eea' : sortMode ? '2px dashed #aaa' : '2px solid transparent',
+                                        cursor: sortMode ? 'grab' : 'pointer',
                                         transition: 'transform 0.15s, border 0.15s, opacity 0.15s',
                                         position: 'relative',
                                         userSelect: 'none'
@@ -4078,7 +4084,7 @@
             );
         }
 
-        function CategoryContextMenu({ category, x, y, onClose, onAddMovement, onViewMovements, onEditCategory, onBudget, onArchive }) {
+        function CategoryContextMenu({ category, x, y, onClose, onAddMovement, onViewMovements, onEditCategory, onBudget, onSort }) {
             React.useEffect(() => {
                 const handleClickOutside = () => onClose();
                 setTimeout(() => document.addEventListener('click', handleClickOutside), 0);
@@ -4201,6 +4207,28 @@
                         >
                             <span style={{ fontSize: '18px' }}>💰</span>
                             <span>Imposta budget</span>
+                        </button>
+
+                        <button
+                            onClick={onSort}
+                            style={{
+                                width: '100%',
+                                padding: '12px 16px',
+                                border: 'none',
+                                background: 'none',
+                                textAlign: 'left',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '12px',
+                                fontSize: '14px',
+                                transition: 'background 0.2s'
+                            }}
+                            onMouseOver={(e) => e.currentTarget.style.background = '#f5f5f5'}
+                            onMouseOut={(e) => e.currentTarget.style.background = 'none'}
+                        >
+                            <span style={{ fontSize: '18px' }}>↕️</span>
+                            <span>Sposta (riordina)</span>
                         </button>
                     </div>
                 </div>
