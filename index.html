@@ -1753,6 +1753,112 @@
                 }
             };
 
+            // ============ ESPORTA CSV (formato 1Money) ============
+            const exportCSV = async () => {
+                const profileId = activeAccountId;
+                const allTx = await window.loadTransactionsFromDB(profileId);
+                const allAccs = getCustomTransactionAccounts();
+                const allCats = getCategoriesFromStorage();
+                const getAccName = (id) => allAccs.find(a => a.id === id)?.name || id || 'cash';
+                const getCatName = (type, id) => {
+                    const list = type === 'income' ? allCats.income : allCats.expense;
+                    return list.find(c => c.id === id)?.name || id || 'Altro';
+                };
+
+                const rows = [
+                    ['Data', 'Tipologia', 'Dal conto', 'Categoria', 'Importo', 'Valuta', 'Tasso', 'Conto2', 'Tag', 'Note']
+                ];
+                allTx.forEach(t => {
+                    const d = new Date(t.date);
+                    const data = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+                    const tipologia = t.type === 'income' ? 'Entrata' : 'Uscita';
+                    const conto = getAccName(t.account);
+                    const categoria = getCatName(t.type, t.category);
+                    const importo = t.amount.toFixed(2).replace('.', ',');
+                    const tags = (t.tags || []).map(tagId => {
+                        const tag = getTagsFromStorage().find(tg => tg.id === tagId);
+                        return tag ? tag.name : tagId;
+                    }).join(':');
+                    const note = (t.note || '').replace(/"/g, '""');
+                    rows.push([data, tipologia, conto, categoria, importo, 'EUR', '1', '', tags, note]);
+                });
+
+                const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('
+');
+                const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `moneytracker_export_${new Date().toISOString().split('T')[0]}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+            };
+
+            // ============ BACKUP COMPLETO JSON ============
+            const exportBackup = async () => {
+                const profileId = activeAccountId;
+                const allTx = await window.loadTransactionsFromDB(profileId);
+                const backup = {
+                    version: 1,
+                    date: new Date().toISOString(),
+                    profileId,
+                    transactions: allTx,
+                    categories: getCategoriesFromStorage(),
+                    accounts: getCustomTransactionAccounts(),
+                    budgets: JSON.parse(localStorage.getItem(`account_${profileId}_budgets`) || '{}'),
+                    settings: JSON.parse(localStorage.getItem(`account_${profileId}_settings`) || '{}'),
+                    categoryOrder: {
+                        expense: JSON.parse(localStorage.getItem('categoryOrder') || '[]'),
+                        income: JSON.parse(localStorage.getItem('categoryOrder_income') || '[]'),
+                    }
+                };
+                const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `moneytracker_backup_${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            };
+
+            // ============ RIPRISTINA BACKUP JSON ============
+            const importBackup = (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    try {
+                        const backup = JSON.parse(e.target.result);
+                        if (!backup.version || !backup.transactions) {
+                            alert('File di backup non valido.');
+                            return;
+                        }
+                        if (!window.confirm(`Ripristinare il backup del ${new Date(backup.date).toLocaleDateString('it-IT')}?\n\nAttenzione: i dati attuali verranno sostituiti!`)) return;
+
+                        const profileId = activeAccountId;
+                        // Ripristina transazioni
+                        await window.saveTransactionsToDB(profileId, backup.transactions);
+                        // Ripristina categorie
+                        if (backup.categories) localStorage.setItem('customCategories_v2', JSON.stringify(backup.categories));
+                        // Ripristina conti
+                        if (backup.accounts) localStorage.setItem(`customTransactionAccounts_${profileId}`, JSON.stringify(backup.accounts));
+                        // Ripristina budget
+                        if (backup.budgets) localStorage.setItem(`account_${profileId}_budgets`, JSON.stringify(backup.budgets));
+                        // Ripristina impostazioni
+                        if (backup.settings) localStorage.setItem(`account_${profileId}_settings`, JSON.stringify(backup.settings));
+                        // Ripristina ordine categorie
+                        if (backup.categoryOrder?.expense?.length) localStorage.setItem('categoryOrder', JSON.stringify(backup.categoryOrder.expense));
+                        if (backup.categoryOrder?.income?.length) localStorage.setItem('categoryOrder_income', JSON.stringify(backup.categoryOrder.income));
+
+                        alert('✅ Backup ripristinato con successo!');
+                        window.location.reload();
+                    } catch(err) {
+                        alert('Errore nel ripristino: ' + err.message);
+                    }
+                };
+                reader.readAsText(file);
+            };
+
             const handleFileUpload = (event) => {
                 const file = event.target.files[0];
                 if (!file) return;
@@ -2733,6 +2839,9 @@
                     {showSettingsModal && (
                         <SettingsModal 
                             onClose={() => setShowSettingsModal(false)}
+                            onExportCSV={exportCSV}
+                            onExportBackup={exportBackup}
+                            onImportBackup={importBackup}
                             settings={settings}
                             onSave={updateSettings}
                             handleFileUpload={handleFileUpload}
@@ -4871,7 +4980,7 @@
             );
         }
 
-        function SettingsModal({ onClose, settings, onSave, handleFileUpload, accounts, activeAccountId, getActiveAccount, deleteAccount, setShowSQLiteImportModal, setShowManageCategoriesModal, setShowManageAccountsModal }) {
+        function SettingsModal({ onClose, settings, onSave, handleFileUpload, accounts, activeAccountId, getActiveAccount, deleteAccount, setShowSQLiteImportModal, setShowManageCategoriesModal, setShowManageAccountsModal, onExportCSV, onExportBackup, onImportBackup }) {
             const [monthStartDay, setMonthStartDay] = useState(settings.monthStartDay);
 
             const handleSubmit = (e) => {
@@ -5099,6 +5208,39 @@
                                 >
                                     💳 Gestisci Conti
                                 </button>
+                            </div>
+
+                            {/* ===== SEZIONE ESPORTA DATI ===== */}
+                            <div style={{ padding: '15px', background: '#e8eaf6', border: '2px solid #3f51b5', borderRadius: '10px', marginBottom: '20px' }}>
+                                <div style={{ fontWeight: 'bold', marginBottom: '10px', color: '#283593', fontSize: '15px' }}>
+                                    💾 Esporta & Backup dati
+                                </div>
+                                <div style={{ fontSize: '12px', color: '#555', marginBottom: '14px' }}>
+                                    Esporta le tue transazioni in CSV (compatibile con 1Money) oppure crea un backup completo di tutti i dati per ripristinarli in futuro.
+                                </div>
+
+                                {/* Esporta CSV */}
+                                <button type="button" onClick={onExportCSV}
+                                    style={{ width: '100%', padding: '11px', marginBottom: '10px', background: '#3f51b5', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                                    📊 Esporta CSV (formato 1Money)
+                                </button>
+
+                                {/* Backup JSON */}
+                                <button type="button" onClick={onExportBackup}
+                                    style={{ width: '100%', padding: '11px', marginBottom: '10px', background: '#5c6bc0', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                                    💾 Backup completo (JSON)
+                                </button>
+
+                                {/* Ripristina JSON */}
+                                <div style={{ fontSize: '12px', color: '#555', marginBottom: '6px', marginTop: '4px' }}>
+                                    📥 Ripristina da backup JSON:
+                                </div>
+                                <input type="file" accept=".json" onChange={onImportBackup}
+                                    style={{ width: '100%', padding: '10px', border: '2px dashed #3f51b5', borderRadius: '8px', cursor: 'pointer', background: 'white', fontSize: '12px' }}
+                                />
+                                <div style={{ fontSize: '11px', color: '#999', marginTop: '6px' }}>
+                                    ⚠️ Il ripristino sovrascrive i dati attuali del profilo selezionato.
+                                </div>
                             </div>
 
                             <div style={{ 
