@@ -1753,113 +1753,107 @@
                 }
             };
 
-            // ============ ESPORTA CSV (formato 1Money) ============
+
+            // ===== ESPORTA CSV (formato 1Money) =====
             const exportCSV = async () => {
                 const profileId = activeAccountId;
                 const allTx = await window.loadTransactionsFromDB(profileId);
                 const allAccs = getCustomTransactionAccounts();
                 const allCats = getCategoriesFromStorage();
                 const allTagsList = getTagsFromStorage();
-                const getAccName = (id) => (allAccs.find(a => a.id === id) || {}).name || id || 'cash';
-                const getCatName = (type, id) => {
-                    const list = type === 'income' ? allCats.income : allCats.expense;
-                    return (list.find(c => c.id === id) || {}).name || 'Altro';
+
+                const getAccName = function(id) {
+                    var a = allAccs.find(function(x) { return x.id === id; });
+                    return a ? a.name : (id || 'cash');
                 };
-                const escQ = (v) => '"' + String(v || '').replace(/"/g, '""') + '"';
+                const getCatName = function(type, id) {
+                    var list = type === 'income' ? allCats.income : allCats.expense;
+                    var c = list.find(function(x) { return x.id === id; });
+                    return c ? c.name : 'Altro';
+                };
+                const esc = function(v) {
+                    return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+                };
 
-                const header = ['Data','Tipologia','Dal conto','Categoria','Importo','Valuta','Tasso','Conto2','Tag','Note']
-                    .map(escQ).join(',');
+                var righe = [];
+                righe.push([esc('Data'),esc('Tipologia'),esc('Dal conto'),esc('Categoria'),esc('Importo'),esc('Valuta'),esc('Tasso'),esc('Conto2'),esc('Tag'),esc('Note')].join(','));
 
-                const dataRows = allTx.map(t => {
-                    const d = new Date(t.date);
-                    const gg = String(d.getDate()).padStart(2,'0');
-                    const mm = String(d.getMonth()+1).padStart(2,'0');
-                    const yyyy = d.getFullYear();
-                    const dataStr = gg + '/' + mm + '/' + yyyy;
-                    const tipologia = t.type === 'income' ? 'Entrata' : 'Uscita';
-                    const conto = getAccName(t.account);
-                    const categoria = getCatName(t.type, t.category);
-                    const importo = t.amount.toFixed(2).replace('.', ',');
-                    const tags = (t.tags || []).map(function(tagId) {
-                        const tag = allTagsList.find(function(tg) { return tg.id === tagId; });
-                        return tag ? tag.name : tagId;
+                allTx.forEach(function(t) {
+                    var d = new Date(t.date);
+                    var gg = String(d.getDate()).padStart(2,'0');
+                    var mm = String(d.getMonth()+1).padStart(2,'0');
+                    var yyyy = String(d.getFullYear());
+                    var dataStr = gg + '/' + mm + '/' + yyyy;
+                    var tipo = t.type === 'income' ? 'Entrata' : 'Uscita';
+                    var conto = getAccName(t.account);
+                    var cat = getCatName(t.type, t.category);
+                    var imp = t.amount.toFixed(2).replace('.', ',');
+                    var tags = (t.tags || []).map(function(tid) {
+                        var tg = allTagsList.find(function(x) { return x.id === tid; });
+                        return tg ? tg.name : tid;
                     }).join(':');
-                    const note = t.note || '';
-                    return [dataStr, tipologia, conto, categoria, importo, 'EUR', '1', '', tags, note]
-                        .map(escQ).join(',');
+                    var nota = t.note || '';
+                    righe.push([esc(dataStr),esc(tipo),esc(conto),esc(cat),esc(imp),esc('EUR'),esc('1'),esc(''),esc(tags),esc(nota)].join(','));
                 });
 
-                const csv = [header].concat(dataRows).join('
-');
-                const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
+                var csv = '\uFEFF' + righe.join('\r\n');
+                var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                var url = URL.createObjectURL(blob);
+                var a = document.createElement('a');
                 a.href = url;
-                a.download = 'moneytracker_export_' + new Date().toISOString().split('T')[0] + '.csv';
+                a.download = 'moneytracker_' + new Date().toISOString().split('T')[0] + '.csv';
                 a.click();
                 URL.revokeObjectURL(url);
             };
 
-                        // ============ BACKUP COMPLETO JSON ============
+            // ===== BACKUP COMPLETO JSON =====
             const exportBackup = async () => {
                 const profileId = activeAccountId;
                 const allTx = await window.loadTransactionsFromDB(profileId);
                 const backup = {
                     version: 1,
                     date: new Date().toISOString(),
-                    profileId,
+                    profileId: profileId,
                     transactions: allTx,
                     categories: getCategoriesFromStorage(),
                     accounts: getCustomTransactionAccounts(),
-                    budgets: JSON.parse(localStorage.getItem(`account_${profileId}_budgets`) || '{}'),
-                    settings: JSON.parse(localStorage.getItem(`account_${profileId}_settings`) || '{}'),
-                    categoryOrder: {
-                        expense: JSON.parse(localStorage.getItem('categoryOrder') || '[]'),
-                        income: JSON.parse(localStorage.getItem('categoryOrder_income') || '[]'),
-                    }
+                    budgets: JSON.parse(localStorage.getItem('account_' + profileId + '_budgets') || '{}'),
+                    settings: JSON.parse(localStorage.getItem('account_' + profileId + '_settings') || '{}'),
                 };
-                const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
+                var json = JSON.stringify(backup, null, 2);
+                var blob = new Blob([json], { type: 'application/json' });
+                var url = URL.createObjectURL(blob);
+                var a = document.createElement('a');
                 a.href = url;
-                a.download = `moneytracker_backup_${new Date().toISOString().split('T')[0]}.json`;
+                a.download = 'backup_' + new Date().toISOString().split('T')[0] + '.json';
                 a.click();
                 URL.revokeObjectURL(url);
             };
 
-            // ============ RIPRISTINA BACKUP JSON ============
-            const importBackup = (event) => {
-                const file = event.target.files[0];
+            // ===== RIPRISTINA BACKUP JSON =====
+            const importBackup = function(event) {
+                var file = event.target.files[0];
                 if (!file) return;
-                const reader = new FileReader();
-                reader.onload = async (e) => {
+                var reader = new FileReader();
+                reader.onload = async function(e) {
                     try {
-                        const backup = JSON.parse(e.target.result);
+                        var backup = JSON.parse(e.target.result);
                         if (!backup.version || !backup.transactions) {
-                            alert('File di backup non valido.');
+                            alert('File non valido.');
                             return;
                         }
-                        if (!window.confirm(`Ripristinare il backup del ${new Date(backup.date).toLocaleDateString('it-IT')}?\n\nAttenzione: i dati attuali verranno sostituiti!`)) return;
-
-                        const profileId = activeAccountId;
-                        // Ripristina transazioni
+                        var dataStr = new Date(backup.date).toLocaleDateString('it-IT');
+                        if (!window.confirm('Ripristinare backup del ' + dataStr + '?\n\nI dati attuali verranno sostituiti!')) return;
+                        var profileId = activeAccountId;
                         await window.saveTransactionsToDB(profileId, backup.transactions);
-                        // Ripristina categorie
                         if (backup.categories) localStorage.setItem('customCategories_v2', JSON.stringify(backup.categories));
-                        // Ripristina conti
-                        if (backup.accounts) localStorage.setItem(`customTransactionAccounts_${profileId}`, JSON.stringify(backup.accounts));
-                        // Ripristina budget
-                        if (backup.budgets) localStorage.setItem(`account_${profileId}_budgets`, JSON.stringify(backup.budgets));
-                        // Ripristina impostazioni
-                        if (backup.settings) localStorage.setItem(`account_${profileId}_settings`, JSON.stringify(backup.settings));
-                        // Ripristina ordine categorie
-                        if (backup.categoryOrder?.expense?.length) localStorage.setItem('categoryOrder', JSON.stringify(backup.categoryOrder.expense));
-                        if (backup.categoryOrder?.income?.length) localStorage.setItem('categoryOrder_income', JSON.stringify(backup.categoryOrder.income));
-
-                        alert('✅ Backup ripristinato con successo!');
+                        if (backup.accounts) localStorage.setItem('customTransactionAccounts_' + profileId, JSON.stringify(backup.accounts));
+                        if (backup.budgets) localStorage.setItem('account_' + profileId + '_budgets', JSON.stringify(backup.budgets));
+                        if (backup.settings) localStorage.setItem('account_' + profileId + '_settings', JSON.stringify(backup.settings));
+                        alert('Backup ripristinato!');
                         window.location.reload();
                     } catch(err) {
-                        alert('Errore nel ripristino: ' + err.message);
+                        alert('Errore: ' + err.message);
                     }
                 };
                 reader.readAsText(file);
@@ -5216,37 +5210,22 @@
                                 </button>
                             </div>
 
-                            {/* ===== SEZIONE ESPORTA DATI ===== */}
                             <div style={{ padding: '15px', background: '#e8eaf6', border: '2px solid #3f51b5', borderRadius: '10px', marginBottom: '20px' }}>
                                 <div style={{ fontWeight: 'bold', marginBottom: '10px', color: '#283593', fontSize: '15px' }}>
-                                    💾 Esporta &amp; Backup dati
+                                    Esporta dati
                                 </div>
                                 <div style={{ fontSize: '12px', color: '#555', marginBottom: '14px' }}>
-                                    Esporta le tue transazioni in CSV (compatibile con 1Money) oppure crea un backup completo di tutti i dati per ripristinarli in futuro.
+                                    Esporta le transazioni in CSV (compatibile con 1Money) oppure crea un backup completo JSON.
                                 </div>
-
-                                {/* Esporta CSV */}
-                                <button type="button" onClick={onExportCSV}
-                                    style={{ width: '100%', padding: '11px', marginBottom: '10px', background: '#3f51b5', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                                    📊 Esporta CSV (formato 1Money)
+                                <button type="button" onClick={onExportCSV} style={{ width: '100%', padding: '11px', marginBottom: '10px', background: '#3f51b5', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}>
+                                    Esporta CSV (formato 1Money)
                                 </button>
-
-                                {/* Backup JSON */}
-                                <button type="button" onClick={onExportBackup}
-                                    style={{ width: '100%', padding: '11px', marginBottom: '10px', background: '#5c6bc0', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                                    💾 Backup completo (JSON)
+                                <button type="button" onClick={onExportBackup} style={{ width: '100%', padding: '11px', marginBottom: '10px', background: '#5c6bc0', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}>
+                                    Backup completo JSON
                                 </button>
-
-                                {/* Ripristina JSON */}
-                                <div style={{ fontSize: '12px', color: '#555', marginBottom: '6px', marginTop: '4px' }}>
-                                    📥 Ripristina da backup JSON:
-                                </div>
-                                <input type="file" accept=".json" onChange={onImportBackup}
-                                    style={{ width: '100%', padding: '10px', border: '2px dashed #3f51b5', borderRadius: '8px', cursor: 'pointer', background: 'white', fontSize: '12px' }}
-                                />
-                                <div style={{ fontSize: '11px', color: '#999', marginTop: '6px' }}>
-                                    ⚠️ Il ripristino sovrascrive i dati attuali del profilo selezionato.
-                                </div>
+                                <div style={{ fontSize: '12px', color: '#555', marginBottom: '6px' }}>Ripristina da backup JSON:</div>
+                                <input type="file" accept=".json" onChange={onImportBackup} style={{ width: '100%', padding: '10px', border: '2px dashed #3f51b5', borderRadius: '8px', cursor: 'pointer', background: 'white', fontSize: '12px' }} />
+                                <div style={{ fontSize: '11px', color: '#999', marginTop: '6px' }}>Il ripristino sovrascrive i dati attuali.</div>
                             </div>
 
                             <div style={{ 
