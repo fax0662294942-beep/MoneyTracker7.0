@@ -1759,42 +1759,48 @@
                 const allTx = await window.loadTransactionsFromDB(profileId);
                 const allAccs = getCustomTransactionAccounts();
                 const allCats = getCategoriesFromStorage();
-                const getAccName = (id) => allAccs.find(a => a.id === id)?.name || id || 'cash';
+                const allTagsList = getTagsFromStorage();
+                const getAccName = (id) => (allAccs.find(a => a.id === id) || {}).name || id || 'cash';
                 const getCatName = (type, id) => {
                     const list = type === 'income' ? allCats.income : allCats.expense;
-                    return list.find(c => c.id === id)?.name || id || 'Altro';
+                    return (list.find(c => c.id === id) || {}).name || 'Altro';
                 };
+                const escQ = (v) => '"' + String(v || '').replace(/"/g, '""') + '"';
 
-                const rows = [
-                    ['Data', 'Tipologia', 'Dal conto', 'Categoria', 'Importo', 'Valuta', 'Tasso', 'Conto2', 'Tag', 'Note']
-                ];
-                allTx.forEach(t => {
+                const header = ['Data','Tipologia','Dal conto','Categoria','Importo','Valuta','Tasso','Conto2','Tag','Note']
+                    .map(escQ).join(',');
+
+                const dataRows = allTx.map(t => {
                     const d = new Date(t.date);
-                    const data = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+                    const gg = String(d.getDate()).padStart(2,'0');
+                    const mm = String(d.getMonth()+1).padStart(2,'0');
+                    const yyyy = d.getFullYear();
+                    const dataStr = gg + '/' + mm + '/' + yyyy;
                     const tipologia = t.type === 'income' ? 'Entrata' : 'Uscita';
                     const conto = getAccName(t.account);
                     const categoria = getCatName(t.type, t.category);
                     const importo = t.amount.toFixed(2).replace('.', ',');
-                    const tags = (t.tags || []).map(tagId => {
-                        const tag = getTagsFromStorage().find(tg => tg.id === tagId);
+                    const tags = (t.tags || []).map(function(tagId) {
+                        const tag = allTagsList.find(function(tg) { return tg.id === tagId; });
                         return tag ? tag.name : tagId;
                     }).join(':');
-                    const note = (t.note || '').replace(/"/g, '""');
-                    rows.push([data, tipologia, conto, categoria, importo, 'EUR', '1', '', tags, note]);
+                    const note = t.note || '';
+                    return [dataStr, tipologia, conto, categoria, importo, 'EUR', '1', '', tags, note]
+                        .map(escQ).join(',');
                 });
 
-                const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('
+                const csv = [header].concat(dataRows).join('
 ');
                 const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `moneytracker_export_${new Date().toISOString().split('T')[0]}.csv`;
+                a.download = 'moneytracker_export_' + new Date().toISOString().split('T')[0] + '.csv';
                 a.click();
                 URL.revokeObjectURL(url);
             };
 
-            // ============ BACKUP COMPLETO JSON ============
+                        // ============ BACKUP COMPLETO JSON ============
             const exportBackup = async () => {
                 const profileId = activeAccountId;
                 const allTx = await window.loadTransactionsFromDB(profileId);
