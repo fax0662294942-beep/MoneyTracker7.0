@@ -646,159 +646,238 @@
     <script>
         // ============ FUNZIONI SQLite IMPORT ============
         window.readSQLiteDatabase = async function(file) {
-            let SQL;
+            var SQL;
             try {
-                SQL = await initSqlJs({
-                    locateFile: function(f) { return 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/' + f; }
-                });
+                SQL = await initSqlJs({ locateFile: function(f) { return 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/' + f; } });
             } catch(e1) {
-                console.warn('CDN principale fallito, provo fallback...', e1);
                 try {
-                    SQL = await initSqlJs({
-                        locateFile: function(f) { return 'https://cdn.jsdelivr.net/npm/sql.js@1.8.0/dist/' + f; }
-                    });
+                    SQL = await initSqlJs({ locateFile: function(f) { return 'https://cdn.jsdelivr.net/npm/sql.js@1.8.0/dist/' + f; } });
                 } catch(e2) {
-                    throw new Error('Impossibile caricare sql.js. Controlla la connessione internet.\n' + e2.message);
+                    throw new Error('Impossibile caricare sql.js. Controlla la connessione.\n' + e2.message);
                 }
             }
-            const arrayBuffer = await file.arrayBuffer();
-            const uint8Array = new Uint8Array(arrayBuffer);
-            const magic = String.fromCharCode(uint8Array[0], uint8Array[1], uint8Array[2], uint8Array[3], uint8Array[4], uint8Array[5]);
-            if (magic !== 'SQLite') {
-                throw new Error('Il file non sembra un database SQLite valido.\nPrimi bytes: "' + magic + '"\nAssicurati di selezionare il file backup corretto.');
-            }
+            var arrayBuffer = await file.arrayBuffer();
+            var uint8Array = new Uint8Array(arrayBuffer);
+            var magic = String.fromCharCode(uint8Array[0],uint8Array[1],uint8Array[2],uint8Array[3],uint8Array[4],uint8Array[5]);
+            if (magic !== 'SQLite') throw new Error('File non valido. Seleziona un backup 1Money (.db)');
             return new SQL.Database(uint8Array);
         };
 
-        window.queryDB = function(db, sql) {
+        window.queryDB = function(db, sql, params) {
             var results = [];
             try {
-                var stmt = db.prepare(sql);
-                while (stmt.step()) {
-                    results.push(stmt.getAsObject());
-                }
+                var stmt = db.prepare(sql, params);
+                while (stmt.step()) results.push(stmt.getAsObject());
                 stmt.free();
-            } catch(e) {
-                console.warn('Query fallita:', sql, e);
-            }
+            } catch(e) { console.warn('Query fallita:', sql, e); }
             return results;
         };
 
-        window.import1MoneyDB = async function(file) {
+        // Helper icone categoria
+        window._catIcon = function(name, parent, type) {
+            var n = ((name||'') + ' ' + (parent||'')).toLowerCase();
+            if (type === 'income') {
+                if (n.includes('stipend') || n.includes('salari')) return '💼';
+                if (n.includes('franco') || n.includes('valentin')) return '👤';
+                if (n.includes('buon') || n.includes('pasto')) return '🎫';
+                if (n.includes('banca') || n.includes('meglio') || n.includes('conto')) return '🏦';
+                if (n.includes('camper')) return '🚐'; if (n.includes('telepass')) return '🛣️';
+                if (n.includes('carta') || n.includes('card')) return '💳';
+                if (n.includes('budget') || n.includes('vacanze')) return '✈️';
+                return '💰';
+            }
+            if (n.includes('supermercato') || n.includes('spesa') || n.includes('mercato') || n.includes('detersiv')) return '🛒';
+            if (n.includes('benzina') || n.includes('gpl') || n.includes('carburant')) return '⛽';
+            if (n.includes('pedaggi') || n.includes('pedaggio') || n.includes('casello') || n.includes('autostr')) return '🛣️';
+            if (n.includes('bollette') || n.includes('bolletta') || n.includes('luce') || n.includes('acqua')) return '💡';
+            if (n.includes('condomin') || n.includes('supercondomin')) return '🏢';
+            if (n.includes('area sosta') || n.includes('campeggio')) return '🏕️';
+            if (n.includes('colazion') || n.includes('pranzo') || n.includes('cena') || n.includes('ristorant')) return '🍽️';
+            if (n.includes('escursion') || n.includes('visita') || n.includes('museo')) return '🎭';
+            if (n.includes('farmacia') || n.includes('salute') || n.includes('medic')) return '💊';
+            if (n.includes('abbigliamento') || n.includes('shopping')) return '🛍️';
+            if (n.includes('parcheggio')) return '🅿️';
+            if (n.includes('camper')) return '🚐'; if (n.includes('auto') || n.includes('macchina')) return '🚗';
+            if (n.includes('treno') || n.includes('aereo') || n.includes('volo') || n.includes('trasport')) return '✈️';
+            if (n.includes('vacanze') || n.includes('viaggio') || n.includes('viaggi')) return '🏖️';
+            if (n.includes('regali') || n.includes('regalo')) return '🎁';
+            if (n.includes('lavoro') || n.includes('ufficio')) return '💼';
+            if (n.includes('assicuraz') || n.includes('polizz') || n.includes('rimessaggio')) return '📋';
+            if (n.includes('telepass')) return '🛣️'; if (n.includes('gas')) return '🔥';
+            return '📦';
+        };
+
+        // STEP 1: analizza il file e restituisce preview senza importare
+        window.analyze1MoneyDB = async function(file) {
             var db = await window.readSQLiteDatabase(file);
 
-            var tables = window.queryDB(db, "SELECT name FROM sqlite_master WHERE type='table'");
-            console.log('Tabelle trovate:', tables.map(function(t) { return t.name; }));
+            // Trova il book più recente (Backup giornaliero = _ty=4)
+            var books = window.queryDB(db, "SELECT _id, _na, _ty, _da FROM ba ORDER BY _da DESC");
+            var targetBook = null;
+            for (var i = 0; i < books.length; i++) {
+                if (books[i]._ty === 4 || books[i]._ty === '4') { targetBook = books[i]; break; }
+            }
+            if (!targetBook) targetBook = books[0];
+            var bookId = targetBook._id;
 
-            var rawCategories = window.queryDB(db, "SELECT * FROM de");
-            console.log('Categorie trovate:', rawCategories.length);
-            if (rawCategories.length > 0) console.log('Colonne DE:', Object.keys(rawCategories[0]));
-
-            var rawAccounts = window.queryDB(db, "SELECT * FROM ta");
-            console.log('Conti trovati:', rawAccounts.length);
-            if (rawAccounts.length > 0) console.log('Colonne TA:', Object.keys(rawAccounts[0]));
-
-            var rawTransactions = window.queryDB(db, "SELECT * FROM tr");
-            console.log('Transazioni trovate:', rawTransactions.length);
-            if (rawTransactions.length > 0) console.log('Colonne TR:', Object.keys(rawTransactions[0]));
-
-            var COLORS = ['#FF6B6B','#4ECDC4','#4DA6FF','#95E1D3','#AA96DA','#FFD93D','#FF8E8E','#5ED5D5','#3D8BFF','#FCBAD3','#FFF176','#A8D8EA','#8D6E63','#CE93D8','#FFB74D','#B0BEC5','#6BCF7F','#4CAF50','#8BC34A','#9CCC65','#AED581','#C5E1A5','#F06292','#BA68C8','#64B5F6','#4DB6AC','#81C784','#FF8A65','#A1887F'];
-            var ACC_COLORS = ['#4CAF50','#2196F3','#FF9800','#E91E63','#9C27B0','#00BCD4','#FF5722','#607D8B','#795548','#FFC107','#009688','#673AB7','#3F51B5','#FF4081'];
-
-            // Processa categorie
-            var catExpense = [];
-            var catIncome = [];
-            var catMap = {};
-
-            rawCategories.forEach(function(row, idx) {
-                var id = row._id !== undefined ? row._id : idx;
-                var name = row._na || row.name || row._n || ('Categoria ' + id);
-                var type = (row._ty === 1 || row._ty === '1') ? 'income' : 'expense';
-                var color = COLORS[idx % COLORS.length];
-                var icon = type === 'income' ? '💰' : '📦';
-                var catObj = { id: 'imported_cat_' + id, name: String(name), icon: icon, color: color };
-                catMap[id] = Object.assign({}, catObj, { type: type });
-                if (type === 'expense') catExpense.push(catObj);
-                else catIncome.push(catObj);
+            // Categorie (deduplicato per _id)
+            var rawCats = window.queryDB(db, "SELECT _id, _na, _ty, _pi FROM de GROUP BY _id");
+            var catById = {};
+            rawCats.forEach(function(r) {
+                catById[r._id] = { name:(r._na||'').trim(), type:(r._ty===1||r._ty==='1')?'expense':'income', parentId:r._pi||null };
+            });
+            // Risolvi parentName
+            Object.keys(catById).forEach(function(id) {
+                var c = catById[id];
+                if (c.parentId && catById[c.parentId]) c.parentName = catById[c.parentId].name;
             });
 
-            // Processa conti
-            var accountMap = {};
-            var customAccounts = [];
+            // Transazioni del book (no transfer)
+            var txRows = window.queryDB(db, "SELECT _id,_ty,_da,_a_i,_d_i,_a_m FROM tr WHERE _b_i="+bookId+" AND _ty!=2");
+            var usedCatIds = {}, usedWalletIds = {};
+            var minDate = Infinity, maxDate = 0, totalInc = 0, totalExp = 0;
+            txRows.forEach(function(t) {
+                var ty = parseInt(t._ty);
+                var catId = ty===0 ? t._d_i : t._a_i;
+                var walId = ty===0 ? t._a_i : t._d_i;
+                if (catId) usedCatIds[catId] = true;
+                if (walId) usedWalletIds[walId] = true;
+                var ts = parseInt(t._da||0);
+                if (ts < minDate) minDate = ts;
+                if (ts > maxDate) maxDate = ts;
+                var amt = parseFloat(t._a_m||0);
+                if (ty===1) totalInc += amt; else totalExp += amt;
+            });
 
-            if (rawAccounts.length > 0) {
-                rawAccounts.forEach(function(row, idx) {
-                    var id = row._id !== undefined ? row._id : idx;
-                    var name = row._na || row.name || row._n || ('Conto ' + id);
-                    var color = ACC_COLORS[idx % ACC_COLORS.length];
-                    var slug = 'acc_' + String(name).toLowerCase().replace(/[^a-z0-9]/g, '_') + '_' + id;
-                    accountMap[id] = slug;
-                    customAccounts.push({ id: slug, name: String(name), icon: '🏦', color: color });
-                });
-            } else {
-                var accIds = {};
-                rawTransactions.forEach(function(t) {
-                    var aid = t._a_i !== undefined ? t._a_i : (t._ai !== undefined ? t._ai : t.account_id);
-                    if (aid !== undefined && aid !== null) accIds[aid] = true;
-                });
-                var idx = 0;
-                Object.keys(accIds).forEach(function(aid) {
-                    var slug = 'acc_imported_' + aid;
-                    accountMap[aid] = slug;
-                    customAccounts.push({ id: slug, name: 'Conto ' + aid, icon: '🏦', color: ACC_COLORS[idx % ACC_COLORS.length] });
-                    idx++;
-                });
-            }
+            // Categorie da creare (non in quelle default di MoneyTracker)
+            var defaultNames = ['spesa','ristoranti','trasporti','carburante','bollette','affitto','shopping','salute',
+                'svago','viaggi','vacanze','istruzione','per lavoro','famiglia','spese personali','altro',
+                'stipendio','freelance','investimenti','rimborsi','regalo'];
+            var newCats = [];
+            Object.keys(usedCatIds).forEach(function(cid) {
+                var c = catById[cid];
+                if (!c || !c.name) return;
+                var displayName = c.parentName ? c.parentName + ' > ' + c.name : c.name;
+                var isDefault = defaultNames.some(function(d) { return c.name.toLowerCase().includes(d); });
+                newCats.push({ id: cid, name: displayName, type: c.type, isNew: !isDefault });
+            });
 
-            // Processa transazioni
-            var transactions = [];
-            var skipped = 0;
-            var baseTime = Date.now();
+            var wallets = [];
+            Object.keys(usedWalletIds).forEach(function(wid) {
+                var c = catById[wid];
+                wallets.push(c ? c.name : 'Conto '+wid);
+            });
 
-            rawTransactions.forEach(function(row, idx) {
-                try {
-                    var ty = parseInt(row._ty || row.ty || 0);
-                    if (ty === 2) { skipped++; return; }
+            var fmt = function(ts) { return ts < Infinity && ts > 0 ? new Date(ts).toLocaleDateString('it-IT') : '?'; };
 
-                    var type = ty === 1 ? 'income' : 'expense';
-                    var tsMs = parseInt(row._da || row._d || row.date || 0);
-                    var dateObj = tsMs > 0 ? new Date(tsMs) : new Date();
-                    var amount = Math.abs(parseFloat(row._a_m || row._am || row.amount || 0));
-                    var catId = row._c_i !== undefined ? row._c_i : (row._ci !== undefined ? row._ci : row.cat_id);
-                    var catInfo = catMap[catId];
-                    var categoryId = catInfo ? catInfo.id : 'other';
-                    var accId = row._a_i !== undefined ? row._a_i : (row._ai !== undefined ? row._ai : row.account_id);
-                    var accountSlug = accountMap[accId] || 'cash';
-                    var note = row._co || row._note || row.note || row._n || '';
+            db.close();
+            return {
+                _file: file,
+                bookName: targetBook._na || 'Backup',
+                bookDate: fmt(parseInt(targetBook._da)),
+                bookId: bookId,
+                transactions: txRows.length,
+                transfers: 0,
+                dateFrom: fmt(minDate),
+                dateTo: fmt(maxDate),
+                totalExpense: totalExp,
+                totalIncome: totalInc,
+                newCategories: newCats.filter(function(c){return c.isNew;}),
+                allCategories: newCats,
+                wallets: wallets
+            };
+        };
 
-                    transactions.push({
-                        id: baseTime + idx,
-                        type: type,
-                        amount: amount,
-                        category: categoryId,
-                        account: accountSlug,
-                        note: String(note || ''),
-                        date: dateObj.toISOString(),
-                        importedFrom1Money: true
-                    });
-                } catch(err) {
-                    console.error('Errore transazione', idx, err);
-                    skipped++;
+        // STEP 2: esegui import reale
+        window.import1MoneyDB = async function(file) {
+            var db = await window.readSQLiteDatabase(file);
+            var books = window.queryDB(db, "SELECT _id,_na,_ty,_da FROM ba ORDER BY _da DESC");
+            var targetBook = null;
+            for (var i=0;i<books.length;i++) { if(books[i]._ty===4||books[i]._ty==='4'){targetBook=books[i];break;} }
+            if (!targetBook) targetBook = books[0];
+            var bookId = targetBook._id;
+
+            var rawCats = window.queryDB(db, "SELECT _id,_na,_ty,_pi FROM de GROUP BY _id");
+            var catById = {};
+            rawCats.forEach(function(r) {
+                catById[r._id] = { name:(r._na||'').trim(), type:(r._ty===1||r._ty==='1')?'expense':'income', parentId:r._pi||null };
+            });
+            Object.keys(catById).forEach(function(id) {
+                var c = catById[id]; if(c.parentId&&catById[c.parentId]) c.parentName=catById[c.parentId].name;
+            });
+
+            var txRows = window.queryDB(db, "SELECT _id,_ty,_da,_a_i,_d_i,_a_m,_co FROM tr WHERE _b_i="+bookId+" AND _ty!=2");
+
+            // Costruisci mappe categoria e wallet
+            var CEXP=['#FF6B6B','#4ECDC4','#4DA6FF','#AA96DA','#FFD93D','#FF8E8E','#5ED5D5','#3D8BFF','#FCBAD3','#FFF176','#A8D8EA','#8D6E63','#CE93D8','#FFB74D','#B0BEC5','#F06292','#BA68C8','#64B5F6'];
+            var CINC=['#6BCF7F','#4CAF50','#8BC34A','#9CCC65','#AED581','#C5E1A5','#81C784'];
+            var WACC=['#4CAF50','#2196F3','#FF9800','#E91E63','#9C27B0','#00BCD4','#FF5722','#607D8B'];
+
+            var usedCatIds={}, usedWalIds={};
+            txRows.forEach(function(t) {
+                var ty=parseInt(t._ty);
+                var cid=ty===0?t._d_i:t._a_i, wid=ty===0?t._a_i:t._d_i;
+                if(cid) usedCatIds[cid]=true; if(wid) usedWalIds[wid]=true;
+            });
+
+            var catIdToMT={}, mtCatExpense=[], mtCatIncome=[], ce=0, ci=0;
+            Object.keys(usedCatIds).forEach(function(cid) {
+                var c=catById[cid]; if(!c||!c.name) return;
+                var displayName=c.parentName?(c.parentName+' > '+c.name):c.name;
+                var mtId='imp_'+String(cid).slice(-8);
+                catIdToMT[cid]=mtId;
+                if(c.type==='expense'){
+                    mtCatExpense.push({id:mtId, name:displayName, icon:window._catIcon(c.name,c.parentName,'expense'), color:CEXP[ce++%CEXP.length]});
+                } else {
+                    mtCatIncome.push({id:mtId, name:displayName, icon:window._catIcon(c.name,c.parentName,'income'), color:CINC[ci++%CINC.length]});
                 }
             });
 
-            db.close();
+            var walletMap={}, customAccounts=[], wi=0;
+            Object.keys(usedWalIds).forEach(function(wid) {
+                var c=catById[wid]; var nm=c?c.name:('Conto '+wid);
+                var slug='w_'+String(nm).toLowerCase().replace(/[^a-z0-9]/g,'_').substring(0,18)+'_'+String(wid).slice(-4);
+                walletMap[wid]={id:slug, name:nm.trim()};
+                customAccounts.push({id:slug, name:nm.trim(), icon:'💳', color:WACC[wi++%WACC.length]});
+            });
 
+            // Processa transazioni
+            var transactions=[], skipped=0, baseTime=Date.now();
+            txRows.forEach(function(row,idx) {
+                try {
+                    var ty=parseInt(row._ty);
+                    var amount=Math.abs(parseFloat(row._a_m||0));
+                    if(!amount||amount<=0){skipped++;return;}
+                    var type=ty===1?'income':'expense';
+                    var ts=parseInt(row._da||0);
+                    var d=ts>0?new Date(ts):new Date();
+                    // Fix timezone: usa mezzogiorno per evitare shift UTC
+                    var dateStr=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+'T12:00:00.000Z';
+                    var catId=ty===0?row._d_i:row._a_i;
+                    var walId=ty===0?row._a_i:row._d_i;
+                    var mtCatId=catIdToMT[catId]||'other';
+                    var wal=walletMap[walId];
+                    var note=row._co?String(row._co).trim():'';
+                    transactions.push({id:baseTime-idx, type:type, amount:amount, category:mtCatId, account:wal?wal.id:'cash', note:note, date:dateStr, importedFrom1Money:true});
+                } catch(err){skipped++;}
+            });
+
+            // Ordina per data decrescente, riassegna ID
+            transactions.sort(function(a,b){return b.date.localeCompare(a.date);});
+            transactions.forEach(function(t,i){t.id=baseTime-i;});
+
+            db.close();
             return {
-                categories: { expense: catExpense, income: catIncome },
-                customAccounts: customAccounts,
-                transactions: transactions,
-                skipped: skipped,
-                stats: {
-                    categories: rawCategories.length,
-                    accounts: customAccounts.length,
-                    transactions: transactions.length,
-                    skipped: skipped
+                categories:{expense:mtCatExpense, income:mtCatIncome},
+                customAccounts:customAccounts,
+                transactions:transactions,
+                skipped:skipped,
+                stats:{
+                    categories:mtCatExpense.length+mtCatIncome.length,
+                    accounts:customAccounts.length,
+                    transactions:transactions.length,
+                    skipped:skipped,
+                    bookUsed:(targetBook._na||'Book '+bookId)+' ('+new Date(parseInt(targetBook._da)).toLocaleDateString('it-IT')+')'
                 }
             };
         };
@@ -5790,223 +5869,200 @@
 
         // ============ SQLite IMPORT MODAL ============
         function SQLiteImportModal({ onClose, onImport }) {
-            const [status, setStatus] = useState('idle'); // idle, loading, success, error
+            const [status, setStatus] = useState('idle'); // idle | analyzing | preview | importing | success | error
+            const [preview, setPreview] = useState(null);
             const [result, setResult] = useState(null);
             const [error, setError] = useState('');
-            const [debugInfo, setDebugInfo] = useState('');
+            const [selectedFile, setSelectedFile] = useState(null);
 
-            const handleFile = (e) => {
+            const handleFile = async (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
-                setStatus('loading');
-                setDebugInfo('File selezionato: ' + file.name + ' (' + file.size + ' bytes)\nVerifica sql.js...');
-
-                // Verifica che sql.js sia caricato
-                if (typeof initSqlJs === 'undefined') {
-                    setError('sql.js non è stato caricato! Controlla la connessione internet e ricarica la pagina.');
+                setSelectedFile(file);
+                setStatus('analyzing');
+                setError('');
+                try {
+                    const p = await window.analyze1MoneyDB(file);
+                    setPreview(p);
+                    setStatus('preview');
+                } catch(err) {
+                    setError(err.message || String(err));
                     setStatus('error');
-                    return;
                 }
+            };
 
-                if (typeof window.import1MoneyDB === 'undefined') {
-                    setError('Funzione import1MoneyDB non trovata! Prova a ricaricare la pagina.');
-                    setStatus('error');
-                    return;
-                }
-
-                setDebugInfo(prev => prev + '\nsql.js OK, avvio import...');
-
-                const logs = [];
-                const origLog = console.log;
-                const origWarn = console.warn;
-                const origErr = console.error;
-                console.log = function() { origLog.apply(console, arguments); logs.push('LOG: ' + Array.from(arguments).join(' ')); };
-                console.warn = function() { origWarn.apply(console, arguments); logs.push('WARN: ' + Array.from(arguments).join(' ')); };
-                console.error = function() { origErr.apply(console, arguments); logs.push('ERR: ' + Array.from(arguments).join(' ')); };
-
-                onImport(file).then(function(stats) {
-                    console.log = origLog;
-                    console.warn = origWarn;
-                    console.error = origErr;
-                    setDebugInfo(logs.join('\n'));
-                    // stats deve essere {categories:N, accounts:N, transactions:N, skipped:N}
-                    setResult({
-                        categories: Number(stats.categories) || 0,
-                        accounts: Number(stats.accounts) || 0,
-                        transactions: Number(stats.transactions) || 0,
-                        skipped: Number(stats.skipped) || 0
-                    });
+            const handleConfirmImport = () => {
+                if (!selectedFile) return;
+                setStatus('importing');
+                onImport(selectedFile).then((stats) => {
+                    setResult(stats);
                     setStatus('success');
-                }).catch(function(err) {
-                    console.log = origLog;
-                    console.warn = origWarn;
-                    console.error = origErr;
-                    var msg = err && err.message ? err.message : String(err);
-                    logs.push('CATCH: ' + msg);
-                    setError(msg);
+                }).catch((err) => {
+                    setError(err.message || String(err));
                     setStatus('error');
-                    setDebugInfo(logs.join('\n') + '\n\nStack:\n' + (err && err.stack ? err.stack : 'N/A'));
                 });
             };
 
+            const fmt = (n) => n?.toLocaleString('it-IT') || '0';
+            const fmtEur = (n) => '€' + (Math.round(n||0)).toLocaleString('it-IT');
+
             return (
                 <div className="modal" onClick={onClose}>
-                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxHeight: '90vh' }}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxHeight: '90vh', overflowY: 'auto' }}>
                         <div className="modal-header">
-                            <h2 className="modal-title">🗄️ Import SQLite 1Money</h2>
+                            <h2 className="modal-title">🗄️ Import 1Money</h2>
                             <button className="close-btn" onClick={onClose}>×</button>
                         </div>
 
+                        {/* ── IDLE: selezione file ── */}
                         {status === 'idle' && (
-                            <div>
-                                <div style={{ 
-                                    background: '#e3f2fd', 
-                                    borderRadius: '10px', 
-                                    padding: '15px', 
-                                    marginBottom: '20px',
-                                    fontSize: '13px',
-                                    color: '#1565c0'
-                                }}>
+                            <div style={{ padding: '16px' }}>
+                                <div style={{ background: '#e3f2fd', borderRadius: '10px', padding: '14px', marginBottom: '16px', fontSize: '13px', color: '#1565c0' }}>
                                     <strong>📋 Cosa verrà importato:</strong>
-                                    <ul style={{ margin: '10px 0 0 15px', lineHeight: '1.8' }}>
-                                        <li>✅ Tutti i conti (tabella TA)</li>
-                                        <li>✅ Tutte le categorie (tabella DE)</li>
-                                        <li>✅ Tutte le transazioni con date, importi, note</li>
+                                    <ul style={{ margin: '8px 0 0 16px', lineHeight: '1.8' }}>
+                                        <li>✅ Transazioni (solo l'ultimo backup)</li>
+                                        <li>✅ Categorie con gerarchia Padre &gt; Figlio</li>
+                                        <li>✅ Conti/wallet (Megliobanca, Contanti…)</li>
                                         <li>⏭️ Trasferimenti: saltati automaticamente</li>
                                     </ul>
                                 </div>
-                                <label style={{
-                                    display: 'block',
-                                    padding: '30px',
-                                    border: '3px dashed #667eea',
-                                    borderRadius: '12px',
-                                    textAlign: 'center',
-                                    cursor: 'pointer',
-                                    background: '#f8f9ff'
-                                }}>
-                                    <div style={{ fontSize: '40px', marginBottom: '10px' }}>🗄️</div>
-                                    <div style={{ fontWeight: 'bold', color: '#667eea', marginBottom: '5px' }}>
-                                        Seleziona il file backup 1Money
-                                    </div>
-                                    <div style={{ fontSize: '12px', color: '#999' }}>
-                                        File SQLite (senza estensione o .db)
-                                    </div>
-                                    <input 
-                                        type="file"
-                                        accept="*/*"
-                                        onChange={handleFile}
-                                        style={{ display: 'none' }}
-                                    />
+                                <label style={{ display:'block', padding:'28px', border:'3px dashed #667eea', borderRadius:'12px', textAlign:'center', cursor:'pointer', background:'#f8f9ff' }}>
+                                    <div style={{ fontSize:'40px', marginBottom:'8px' }}>🗄️</div>
+                                    <div style={{ fontWeight:'bold', color:'#667eea', marginBottom:'4px' }}>Seleziona file backup 1Money</div>
+                                    <div style={{ fontSize:'12px', color:'#999' }}>File SQLite (senza estensione o .db)</div>
+                                    <input type="file" accept="*/*" onChange={handleFile} style={{ display:'none' }} />
                                 </label>
                             </div>
                         )}
 
-                        {status === 'loading' && (
-                            <div style={{ textAlign: 'center', padding: '40px' }}>
-                                <div style={{ fontSize: '50px', marginBottom: '15px' }}>⏳</div>
-                                <div style={{ fontWeight: 'bold', fontSize: '18px', marginBottom: '10px' }}>
-                                    Import in corso...
-                                </div>
-                                <div style={{ color: '#666', fontSize: '13px' }}>{debugInfo}</div>
+                        {/* ── ANALYZING ── */}
+                        {status === 'analyzing' && (
+                            <div style={{ textAlign:'center', padding:'40px 20px' }}>
+                                <div style={{ fontSize:'48px', marginBottom:'12px' }}>🔍</div>
+                                <div style={{ fontWeight:'bold', fontSize:'17px' }}>Analisi in corso…</div>
+                                <div style={{ color:'#888', fontSize:'13px', marginTop:'8px' }}>Lettura categorie e transazioni</div>
                             </div>
                         )}
 
-                        {status === 'success' && result && (
-                            <div>
-                                <div style={{ 
-                                    background: '#e8f5e9', 
-                                    borderRadius: '12px', 
-                                    padding: '20px',
-                                    marginBottom: '15px',
-                                    textAlign: 'center'
-                                }}>
-                                    <div style={{ fontSize: '50px', marginBottom: '10px' }}>✅</div>
-                                    <div style={{ fontWeight: 'bold', fontSize: '20px', color: '#2e7d32' }}>
-                                        Import Completato!
-                                    </div>
+                        {/* ── PREVIEW ── */}
+                        {status === 'preview' && preview && (
+                            <div style={{ padding:'16px' }}>
+                                {/* Header backup */}
+                                <div style={{ background:'#f3e5f5', borderRadius:'10px', padding:'12px', marginBottom:'14px', fontSize:'13px' }}>
+                                    <div style={{ fontWeight:'700', color:'#6a1b9a', marginBottom:'4px' }}>📦 {preview.bookName}</div>
+                                    <div style={{ color:'#888' }}>Aggiornato: {preview.bookDate}</div>
                                 </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '15px' }}>
+
+                                {/* Statistiche principali */}
+                                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px', marginBottom:'14px' }}>
                                     {[
-                                        { label: 'Categorie', value: result && result.categories ? result.categories : 0, icon: '🏷️' },
-                                        { label: 'Conti', value: result && result.accounts ? result.accounts : 0, icon: '💳' },
-                                        { label: 'Transazioni', value: result && result.transactions ? result.transactions : 0, icon: '📊' },
-                                        { label: 'Saltati', value: result && result.skipped !== undefined ? result.skipped : 0, icon: '⏭️' },
-                                    ].map(item => (
-                                        <div key={item.label} style={{
-                                            background: 'white',
-                                            border: '1px solid #e0e0e0',
-                                            borderRadius: '10px',
-                                            padding: '15px',
-                                            textAlign: 'center'
-                                        }}>
-                                            <div style={{ fontSize: '24px' }}>{item.icon}</div>
-                                            <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#667eea' }}>{item.value}</div>
-                                            <div style={{ fontSize: '12px', color: '#666' }}>{item.label}</div>
+                                        { icon:'📊', label:'Transazioni', val: fmt(preview.transactions), color:'#667eea' },
+                                        { icon:'📅', label:'Periodo', val: preview.dateFrom + ' → ' + preview.dateTo, color:'#888', small:true },
+                                        { icon:'💸', label:'Totale Uscite', val: fmtEur(preview.totalExpense), color:'#f44336' },
+                                        { icon:'💚', label:'Totale Entrate', val: fmtEur(preview.totalIncome), color:'#4CAF50' },
+                                    ].map(s => (
+                                        <div key={s.label} style={{ background:'white', border:'1px solid #f0f0f0', borderRadius:'10px', padding:'12px', textAlign:'center' }}>
+                                            <div style={{ fontSize:'20px' }}>{s.icon}</div>
+                                            <div style={{ fontSize: s.small ? '11px' : '16px', fontWeight:'700', color:s.color, marginTop:'4px' }}>{s.val}</div>
+                                            <div style={{ fontSize:'11px', color:'#aaa' }}>{s.label}</div>
                                         </div>
                                     ))}
                                 </div>
-                                {debugInfo && (
-                                    <details style={{ marginBottom: '15px' }}>
-                                        <summary style={{ cursor: 'pointer', color: '#667eea', fontSize: '13px' }}>
-                                            🔍 Dettagli tecnici
-                                        </summary>
-                                        <pre style={{ 
-                                            background: '#f5f5f5', 
-                                            padding: '10px', 
-                                            borderRadius: '8px',
-                                            fontSize: '11px',
-                                            overflow: 'auto',
-                                            maxHeight: '150px',
-                                            whiteSpace: 'pre-wrap'
-                                        }}>{debugInfo}</pre>
-                                    </details>
+
+                                {/* Wallet/conti */}
+                                <div style={{ background:'#fff8e1', borderRadius:'10px', padding:'12px', marginBottom:'12px' }}>
+                                    <div style={{ fontWeight:'600', fontSize:'13px', marginBottom:'6px' }}>💳 Conti rilevati ({preview.wallets.length})</div>
+                                    <div style={{ display:'flex', flexWrap:'wrap', gap:'6px' }}>
+                                        {preview.wallets.map((w,i) => (
+                                            <span key={i} style={{ background:'#fff3cd', padding:'3px 10px', borderRadius:'20px', fontSize:'12px', border:'1px solid #ffe082' }}>{w}</span>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Nuove categorie */}
+                                {preview.newCategories.length > 0 && (
+                                    <div style={{ background:'#e8f5e9', borderRadius:'10px', padding:'12px', marginBottom:'14px' }}>
+                                        <div style={{ fontWeight:'600', fontSize:'13px', marginBottom:'6px' }}>
+                                            🏷️ Nuove categorie create automaticamente ({preview.newCategories.length})
+                                        </div>
+                                        <div style={{ maxHeight:'120px', overflowY:'auto' }}>
+                                            {preview.newCategories.map((c,i) => (
+                                                <div key={i} style={{ fontSize:'12px', padding:'2px 0', color:'#444', borderBottom:'1px solid #f0f0f0' }}>
+                                                    {c.type === 'income' ? '💚' : '🔴'} {c.name}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
                                 )}
-                                <button className="submit-btn" onClick={onClose}>
-                                    ✅ Chiudi e Vedi Dati
+
+                                {/* Pulsanti */}
+                                <button onClick={handleConfirmImport} style={{
+                                    width:'100%', padding:'14px',
+                                    background:'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                    color:'white', border:'none', borderRadius:'10px',
+                                    fontSize:'16px', fontWeight:'700', cursor:'pointer', marginBottom:'10px'
+                                }}>
+                                    ✅ Importa {fmt(preview.transactions)} transazioni
+                                </button>
+                                <button onClick={() => { setStatus('idle'); setPreview(null); setSelectedFile(null); }} style={{
+                                    width:'100%', padding:'12px', background:'white',
+                                    border:'1px solid #ddd', borderRadius:'10px',
+                                    fontSize:'14px', color:'#666', cursor:'pointer'
+                                }}>
+                                    ← Scegli altro file
                                 </button>
                             </div>
                         )}
 
-                        {status === 'error' && (
-                            <div>
-                                <div style={{ 
-                                    background: '#ffebee', 
-                                    borderRadius: '12px', 
-                                    padding: '20px',
-                                    marginBottom: '15px',
-                                    textAlign: 'center'
-                                }}>
-                                    <div style={{ fontSize: '50px', marginBottom: '10px' }}>❌</div>
-                                    <div style={{ fontWeight: 'bold', fontSize: '18px', color: '#c62828' }}>
-                                        Errore durante l'import
-                                    </div>
-                                    <div style={{ color: '#666', fontSize: '13px', marginTop: '10px' }}>
-                                        {error}
-                                    </div>
+                        {/* ── IMPORTING ── */}
+                        {status === 'importing' && (
+                            <div style={{ textAlign:'center', padding:'40px 20px' }}>
+                                <div style={{ fontSize:'48px', marginBottom:'12px' }}>⏳</div>
+                                <div style={{ fontWeight:'bold', fontSize:'17px' }}>Import in corso…</div>
+                                <div style={{ color:'#888', fontSize:'13px', marginTop:'8px' }}>
+                                    Creazione categorie e caricamento transazioni
                                 </div>
-                                {debugInfo && (
-                                    <details style={{ marginBottom: '15px' }}>
-                                        <summary style={{ cursor: 'pointer', color: '#c62828', fontSize: '13px' }}>
-                                            🔍 Stack trace
-                                        </summary>
-                                        <pre style={{ 
-                                            background: '#f5f5f5', 
-                                            padding: '10px', 
-                                            borderRadius: '8px',
-                                            fontSize: '11px',
-                                            overflow: 'auto',
-                                            maxHeight: '150px',
-                                            whiteSpace: 'pre-wrap'
-                                        }}>{debugInfo}</pre>
-                                    </details>
-                                )}
-                                <button 
-                                    className="submit-btn" 
-                                    onClick={() => setStatus('idle')}
-                                    style={{ background: '#f44336' }}
-                                >
-                                    🔄 Riprova
-                                </button>
+                            </div>
+                        )}
+
+                        {/* ── SUCCESS ── */}
+                        {status === 'success' && result && (
+                            <div style={{ padding:'16px' }}>
+                                <div style={{ background:'#e8f5e9', borderRadius:'12px', padding:'20px', textAlign:'center', marginBottom:'14px' }}>
+                                    <div style={{ fontSize:'50px', marginBottom:'8px' }}>✅</div>
+                                    <div style={{ fontWeight:'bold', fontSize:'20px', color:'#2e7d32' }}>Import Completato!</div>
+                                    {result.stats?.bookUsed && (
+                                        <div style={{ fontSize:'12px', color:'#888', marginTop:'6px' }}>Da: {result.stats.bookUsed}</div>
+                                    )}
+                                </div>
+                                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'14px' }}>
+                                    {[
+                                        { label:'Transazioni', value: fmt(result.stats?.transactions), icon:'📊' },
+                                        { label:'Categorie',   value: fmt(result.stats?.categories),   icon:'🏷️' },
+                                        { label:'Conti',       value: fmt(result.stats?.accounts),     icon:'💳' },
+                                        { label:'Saltati',     value: fmt(result.stats?.skipped),      icon:'⏭️' },
+                                    ].map(item => (
+                                        <div key={item.label} style={{ background:'white', border:'1px solid #e0e0e0', borderRadius:'10px', padding:'14px', textAlign:'center' }}>
+                                            <div style={{ fontSize:'22px' }}>{item.icon}</div>
+                                            <div style={{ fontSize:'22px', fontWeight:'bold', color:'#667eea' }}>{item.value}</div>
+                                            <div style={{ fontSize:'11px', color:'#666' }}>{item.label}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <button className="submit-btn" onClick={onClose}>✅ Chiudi e Vedi Dati</button>
+                            </div>
+                        )}
+
+                        {/* ── ERROR ── */}
+                        {status === 'error' && (
+                            <div style={{ padding:'16px' }}>
+                                <div style={{ background:'#ffebee', borderRadius:'12px', padding:'20px', textAlign:'center', marginBottom:'14px' }}>
+                                    <div style={{ fontSize:'50px', marginBottom:'8px' }}>❌</div>
+                                    <div style={{ fontWeight:'bold', fontSize:'18px', color:'#c62828' }}>Errore Import</div>
+                                    <div style={{ color:'#666', fontSize:'13px', marginTop:'8px' }}>{error}</div>
+                                </div>
+                                <button className="submit-btn" onClick={() => { setStatus('idle'); setError(''); setSelectedFile(null); }}
+                                    style={{ background:'#f44336' }}>🔄 Riprova</button>
                             </div>
                         )}
                     </div>
