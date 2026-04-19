@@ -30,7 +30,9 @@
         import {
             getAuth, GoogleAuthProvider, signInWithPopup,
             signInWithEmailAndPassword, createUserWithEmailAndPassword,
-            onAuthStateChanged, signOut
+            onAuthStateChanged, signOut,
+            reauthenticateWithCredential, reauthenticateWithPopup,
+            EmailAuthProvider
         } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
         import {
             getFirestore, enableIndexedDbPersistence,
@@ -63,6 +65,7 @@
             GoogleAuthProvider, signInWithPopup,
             signInWithEmailAndPassword, createUserWithEmailAndPassword,
             onAuthStateChanged, signOut,
+            reauthenticateWithCredential, reauthenticateWithPopup, EmailAuthProvider,
             doc, setDoc, getDoc, collection, getDocs, addDoc, deleteDoc,
             onSnapshot, query, where, serverTimestamp
         };
@@ -1334,7 +1337,8 @@
             // ============ DEBITI ============
             const [debts, setDebts] = useState([]);
             const [accountSubTab, setAccountSubTab] = useState('conti'); // 'conti' | 'debiti'
-            const [showDebtModal, setShowDebtModal] = useState(false);   // false | debt object (edit) | 'new' // trigger re-render
+            const [showDebtModal, setShowDebtModal] = useState(false);   // false | debt object (edit) | 'new'
+            const [reauthAction, setReauthAction] = useState(null); // null | { label, onConfirmed } // trigger re-render
             
             // ============ DATI ACCOUNT CORRENTE ============
             const [transactions, setTransactions] = useState([]);
@@ -2822,6 +2826,15 @@
 
             return (
                 <div className="app-container">
+                    {/* ── Reauth Modal ── */}
+                    {reauthAction && (
+                        <ReauthModal
+                            actionLabel={reauthAction.label}
+                            onConfirmed={() => { setReauthAction(null); reauthAction.onConfirmed(); }}
+                            onClose={() => setReauthAction(null)}
+                        />
+                    )}
+
                     {/* ── Auth Loading ── */}
                     {authLoading && (
                         <div style={{
@@ -3560,6 +3573,9 @@
                             setShowSQLiteImportModal={setShowSQLiteImportModal}
                             setShowManageCategoriesModal={setShowManageCategoriesModal}
                             setShowManageAccountsModal={setShowManageAccountsModal}
+                            userRef={userRef}
+                            sharedProfiles={sharedProfiles}
+                            onReauth={(label, action) => setReauthAction({ label, onConfirmed: action })}
                         />
                     )}
 
@@ -5688,7 +5704,7 @@
             );
         }
 
-        function SettingsModal({ onClose, settings, onSave, handleFileUpload, accounts, activeAccountId, getActiveAccount, deleteAccount, setShowSQLiteImportModal, setShowManageCategoriesModal, setShowManageAccountsModal, onExportCSV, onExportBackup, onImportBackup }) {
+        function SettingsModal({ onClose, settings, onSave, handleFileUpload, accounts, activeAccountId, getActiveAccount, deleteAccount, setShowSQLiteImportModal, setShowManageCategoriesModal, setShowManageAccountsModal, onExportCSV, onExportBackup, onImportBackup, userRef, sharedProfiles, onReauth }) {
             const [monthStartDay, setMonthStartDay] = useState(settings.monthStartDay);
 
             const handleSubmit = (e) => {
@@ -5943,88 +5959,117 @@
                                 borderRadius: '10px',
                                 marginBottom: '20px'
                             }}>
-                                <div style={{ fontWeight: 'bold', marginBottom: '12px', color: '#c62828', fontSize: '15px' }}>
+                                <div style={{ fontWeight: 'bold', marginBottom: '14px', color: '#c62828', fontSize: '15px' }}>
                                     🗑️ Reset Dati
                                 </div>
 
-                                {/* RESET 1: solo transazioni */}
-                                <div style={{ marginBottom: '12px' }}>
+                                {/* ── RESET TRANSAZIONI ── */}
+                                <div style={{ marginBottom: '14px' }}>
                                     <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#333', marginBottom: '4px' }}>
                                         Reset transazioni
                                     </div>
                                     <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px' }}>
-                                        Cancella solo le transazioni di <strong>{getActiveAccount()?.icon} {getActiveAccount()?.name}</strong>. Categorie, conti e impostazioni restano intatti.
+                                        Cancella le transazioni di <strong>{getActiveAccount()?.name}</strong>. Categorie e impostazioni restano intatte.
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            const accName = getActiveAccount()?.name || 'questo account';
-                                            if (window.confirm(`⚠️ Cancellare tutte le transazioni di "${accName}"?\n\nCategorie e impostazioni rimarranno invariate.`)) {
-                                                if (window.confirm(`🔴 CONFERMA\n\nElimino TUTTE le transazioni di "${accName}".\n\nProcedere?`)) {
-                                                    const prefix = `account_${activeAccountId}_`;
-                                                    window.deleteTransactionsFromDB(activeAccountId);
-                                                    onClose();
-                                                    window.location.reload();
-                                                }
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                        {/* Solo locale */}
+                                        <button type="button" onClick={() => {
+                                            const nm = getActiveAccount()?.name || 'account';
+                                            if (window.confirm(`⚠️ Cancello le transazioni di "${nm}" solo su QUESTO dispositivo.\n\nI dati su Firestore (cloud) restano.\n\nProcedere?`)) {
+                                                window.deleteTransactionsFromDB(activeAccountId).then(() => {
+                                                    onClose(); window.location.reload();
+                                                });
                                             }
-                                        }}
-                                        style={{
-                                            width: '100%',
-                                            padding: '11px',
-                                            background: '#FF9800',
-                                            color: 'white',
-                                            border: 'none',
-                                            borderRadius: '8px',
-                                            cursor: 'pointer',
-                                            fontWeight: 'bold',
-                                            fontSize: '13px'
-                                        }}
-                                    >
-                                        🧹 Cancella solo le transazioni
-                                    </button>
+                                        }} style={{ padding:'10px 6px', background:'#FF9800', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:'bold', fontSize:'12px', lineHeight:'1.3' }}>
+                                            📱 Solo locale
+                                        </button>
+                                        {/* Locale + Cloud — richiede reauth */}
+                                        <button type="button" onClick={() => {
+                                            const nm = getActiveAccount()?.name || 'account';
+                                            onReauth(
+                                                `Cancella transazioni di "${nm}" da Firestore`,
+                                                async () => {
+                                                    await window.deleteTransactionsFromDB(activeAccountId);
+                                                    if (window.FB_READY && userRef?.current) {
+                                                        const { db, doc, setDoc, collection, getDocs } = window.FB;
+                                                        const isShared = sharedProfiles?.current?.includes(activeAccountId);
+                                                        const basePath = isShared
+                                                            ? ['sharedProfiles', activeAccountId]
+                                                            : ['users', userRef.current.uid, 'profiles', activeAccountId];
+                                                        try {
+                                                            const chunksSnap = await getDocs(collection(db, ...basePath, 'chunks'));
+                                                            await Promise.all(chunksSnap.docs.map(d => window.FB.deleteDoc(d.ref)));
+                                                            await setDoc(doc(db, ...basePath), { chunkCount: 0, updatedAt: Date.now(), lastWriterUid: userRef.current.uid }, { merge: true });
+                                                        } catch(e) { console.error('Firestore reset tx error', e); }
+                                                    }
+                                                    onClose(); window.location.reload();
+                                                }
+                                            );
+                                        }} style={{ padding:'10px 6px', background:'#f44336', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:'bold', fontSize:'12px', lineHeight:'1.3' }}>
+                                            ☁️ Locale + Cloud
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <div style={{ borderTop: '1px solid #ffcdd2', margin: '12px 0' }} />
 
-                                {/* RESET 2: tutto */}
+                                {/* ── RESET COMPLETO ── */}
                                 <div>
                                     <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#c62828', marginBottom: '4px' }}>
                                         Reset completo
                                     </div>
                                     <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px' }}>
-                                        Riporta <strong>tutto</strong> all'origine: transazioni, budget, categorie personalizzate, conti e impostazioni. L'app torna come nuova.
+                                        Cancella <strong>tutto</strong>: transazioni, categorie, conti e impostazioni. L'app torna come nuova.
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            if (window.confirm(`🔴 RESET COMPLETO\n\nStai per cancellare TUTTO: transazioni, categorie, conti e impostazioni.\n\nQuesta operazione è IRREVERSIBILE.\n\nSei sicuro?`)) {
-                                                if (window.confirm(`⛔ ULTIMA CONFERMA\n\nTutto verrà eliminato e l'app tornerà alle impostazioni di fabbrica.\n\nProcedere?`)) {
-                                                    // Cancella IndexedDB per TUTTI i profili
-                                                    const allProfiles = JSON.parse(localStorage.getItem('moneyTrackerAccounts') || '[]');
-                                                    const profileIds = [...new Set([...allProfiles.map(a => a.id), activeAccountId])];
-                                                    const deletePromises = profileIds.map(id => window.deleteTransactionsFromDB(id).catch(() => {}));
-                                                    Promise.all(deletePromises).then(() => {
-                                                        // Cancella TUTTO il localStorage in un colpo solo
-                                                        localStorage.clear();
-                                                        window.location.reload();
-                                                    });
-                                                }
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                        {/* Solo locale */}
+                                        <button type="button" onClick={() => {
+                                            if (window.confirm(`⚠️ RESET COMPLETO — solo questo dispositivo.\n\nI dati cloud restano. Al prossimo avvio verranno riscaricati da Firestore.\n\nProcedere?`)) {
+                                                const allProfiles = JSON.parse(localStorage.getItem('moneyTrackerAccounts') || '[]');
+                                                const ids = [...new Set([...allProfiles.map(a => a.id), activeAccountId])];
+                                                Promise.all(ids.map(id => window.deleteTransactionsFromDB(id).catch(() => {}))).then(() => {
+                                                    localStorage.clear();
+                                                    window.location.reload();
+                                                });
                                             }
-                                        }}
-                                        style={{
-                                            width: '100%',
-                                            padding: '11px',
-                                            background: '#f44336',
-                                            color: 'white',
-                                            border: 'none',
-                                            borderRadius: '8px',
-                                            cursor: 'pointer',
-                                            fontWeight: 'bold',
-                                            fontSize: '13px'
-                                        }}
-                                    >
-                                        ⛔ Reset completo — torna all'origine
-                                    </button>
+                                        }} style={{ padding:'10px 6px', background:'#FF9800', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:'bold', fontSize:'12px', lineHeight:'1.3' }}>
+                                            📱 Solo locale
+                                        </button>
+                                        {/* Locale + Cloud — richiede reauth */}
+                                        <button type="button" onClick={() => {
+                                            onReauth(
+                                                'Reset completo — cancella TUTTO da Firestore',
+                                                async () => {
+                                                    const allProfiles = JSON.parse(localStorage.getItem('moneyTrackerAccounts') || '[]');
+                                                    const ids = [...new Set([...allProfiles.map(a => a.id), activeAccountId])];
+                                                    await Promise.all(ids.map(id => window.deleteTransactionsFromDB(id).catch(() => {})));
+                                                    if (window.FB_READY && userRef?.current) {
+                                                        const { db, doc, setDoc, collection, getDocs } = window.FB;
+                                                        for (const pid of ids) {
+                                                            const isShared = sharedProfiles?.current?.includes(pid);
+                                                            const basePath = isShared
+                                                                ? ['sharedProfiles', pid]
+                                                                : ['users', userRef.current.uid, 'profiles', pid];
+                                                            try {
+                                                                const chunksSnap = await getDocs(collection(db, ...basePath, 'chunks'));
+                                                                await Promise.all(chunksSnap.docs.map(d => window.FB.deleteDoc(d.ref)));
+                                                                await setDoc(doc(db, ...basePath), { chunkCount: 0, updatedAt: Date.now() }, { merge: true });
+                                                            } catch(e) {}
+                                                        }
+                                                        try {
+                                                            await setDoc(doc(db, 'users', userRef.current.uid), {
+                                                                accounts: [], activeAccountId: null, updatedAt: Date.now()
+                                                            });
+                                                        } catch(e) {}
+                                                    }
+                                                    localStorage.clear();
+                                                    window.location.reload();
+                                                }
+                                            );
+                                        }} style={{ padding:'10px 6px', background:'#b71c1c', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:'bold', fontSize:'12px', lineHeight:'1.3' }}>
+                                            ☁️ Locale + Cloud
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
 
@@ -6968,6 +7013,92 @@
                             <button onClick={handleSave} disabled={!name.trim() || !total} className="submit-btn"
                                 style={{ opacity: (!name.trim()||!total) ? 0.5 : 1 }}>
                                 {debt ? '✅ Salva modifiche' : '➕ Aggiungi'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ============ REAUTH HELPER ============
+        // Richiede riautenticazione prima di operazioni distruttive
+        // onConfirmed() viene chiamato solo se l'auth ha successo
+        function ReauthModal({ onConfirmed, onClose, actionLabel }) {
+            const [password, setPassword] = useState('');
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState('');
+
+            const user = window.FB?.auth?.currentUser;
+            const isGoogle = user?.providerData?.[0]?.providerId === 'google.com';
+
+            const handleConfirm = async () => {
+                setLoading(true); setError('');
+                try {
+                    if (isGoogle) {
+                        const provider = new window.FB.GoogleAuthProvider();
+                        await window.FB.reauthenticateWithPopup(user, provider);
+                    } else {
+                        const cred = window.FB.EmailAuthProvider.credential(user.email, password);
+                        await window.FB.reauthenticateWithCredential(user, cred);
+                    }
+                    onConfirmed();
+                } catch(e) {
+                    const msgs = {
+                        'auth/wrong-password': 'Password errata',
+                        'auth/invalid-credential': 'Password errata',
+                        'auth/too-many-requests': 'Troppi tentativi, riprova tra poco',
+                        'auth/user-mismatch': 'Account non corrispondente'
+                    };
+                    setError(msgs[e.code] || 'Errore di autenticazione');
+                } finally { setLoading(false); }
+            };
+
+            return (
+                <div className="modal" onClick={onClose}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h2 className="modal-title">🔐 Conferma identità</h2>
+                            <button className="close-btn" onClick={onClose}>×</button>
+                        </div>
+                        <div style={{ padding: '20px' }}>
+                            <div style={{ background:'#fff3e0', borderRadius:'10px', padding:'12px', marginBottom:'16px', fontSize:'13px', color:'#e65100' }}>
+                                ⚠️ Stai per eseguire: <strong>{actionLabel}</strong><br/>
+                                Questa operazione è <strong>irreversibile</strong>. Conferma la tua identità per procedere.
+                            </div>
+
+                            {isGoogle ? (
+                                <p style={{ fontSize:'14px', color:'#666', marginBottom:'16px', textAlign:'center' }}>
+                                    Verrai reindirizzato a Google per confermare il tuo account.
+                                </p>
+                            ) : (
+                                <div className="form-group">
+                                    <label className="form-label">Password account ({user?.email})</label>
+                                    <input
+                                        type="password"
+                                        className="form-input"
+                                        placeholder="Inserisci la tua password"
+                                        value={password}
+                                        onChange={e => setPassword(e.target.value)}
+                                        onKeyDown={e => e.key === 'Enter' && handleConfirm()}
+                                        autoFocus
+                                    />
+                                </div>
+                            )}
+
+                            {error && (
+                                <div style={{ background:'#ffebee', color:'#c62828', padding:'10px', borderRadius:'8px', fontSize:'13px', marginBottom:'12px' }}>
+                                    ⚠️ {error}
+                                </div>
+                            )}
+
+                            <button onClick={handleConfirm} disabled={loading || (!isGoogle && !password)}
+                                style={{
+                                    width:'100%', padding:'13px',
+                                    background: loading ? '#ccc' : 'linear-gradient(135deg, #f44336, #b71c1c)',
+                                    color:'white', border:'none', borderRadius:'10px',
+                                    fontSize:'15px', fontWeight:'700', cursor: loading ? 'default' : 'pointer'
+                                }}>
+                                {loading ? '⏳ Verifica...' : (isGoogle ? '🔵 Conferma con Google' : '🔐 Conferma e procedi')}
                             </button>
                         </div>
                     </div>
