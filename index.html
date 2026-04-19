@@ -23,6 +23,52 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+
+    <!-- Firebase SDK v10 (modular, esportato su window per Babel) -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+        import {
+            getAuth, GoogleAuthProvider, signInWithPopup,
+            signInWithEmailAndPassword, createUserWithEmailAndPassword,
+            onAuthStateChanged, signOut
+        } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+        import {
+            getFirestore, enableIndexedDbPersistence,
+            doc, setDoc, getDoc, collection, getDocs, addDoc, deleteDoc,
+            onSnapshot, query, where, serverTimestamp
+        } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDue3aMzi-8-zflMvlgdGp1TzzId1CZNaI",
+            authDomain: "viaggi-camper.firebaseapp.com",
+            projectId: "viaggi-camper",
+            storageBucket: "viaggi-camper.firebasestorage.app",
+            messagingSenderId: "172431561795",
+            appId: "1:172431561795:web:ae6ef3e9c2bbdfeb2d70f6"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // Abilita offline cache di Firestore
+        enableIndexedDbPersistence(db).catch(err => {
+            if (err.code === 'failed-precondition') console.warn('Offline Firestore: più tab aperti');
+            else if (err.code === 'unimplemented') console.warn('Browser non supporta offline Firestore');
+        });
+
+        // Esponi globalmente per il codice Babel
+        window.FB = {
+            auth, db,
+            GoogleAuthProvider, signInWithPopup,
+            signInWithEmailAndPassword, createUserWithEmailAndPassword,
+            onAuthStateChanged, signOut,
+            doc, setDoc, getDoc, collection, getDocs, addDoc, deleteDoc,
+            onSnapshot, query, where, serverTimestamp
+        };
+        window.FB_READY = true;
+        document.dispatchEvent(new Event('fb-ready'));
+    </script>
     <style>
         * {
             margin: 0;
@@ -857,6 +903,165 @@
                 });
             });
         };
+
+        // ============ FIRESTORE SYNC ============
+        // Salva transazioni su Firestore (chunked, 400 per documento max ~80KB)
+        window.syncTransactionsToFirestore = async function(profileId, transactions, uid, sharedProfiles) {
+            if (!window.FB_READY || !uid) return;
+            const { db, doc, setDoc } = window.FB;
+            const isShared = (sharedProfiles || []).includes(profileId);
+            const basePath = isShared
+                ? ['sharedProfiles', profileId]
+                : ['users', uid, 'profiles', profileId];
+
+            const CHUNK = 400;
+            const chunks = [];
+            for (var i = 0; i < transactions.length; i += CHUNK) {
+                chunks.push(transactions.slice(i, i + CHUNK));
+            }
+            const saves = chunks.map((chunk, idx) =>
+                setDoc(doc(db, ...basePath, 'chunks', String(idx)), { transactions: chunk })
+            );
+            saves.push(setDoc(doc(db, ...basePath), {
+                chunkCount: chunks.length,
+                updatedAt: Date.now(),
+                lastWriterUid: uid,
+                uid: uid
+            }, { merge: true }));
+            await Promise.all(saves);
+        };
+
+        // Carica transazioni da Firestore
+        window.loadTransactionsFromFirestore = async function(profileId, uid, sharedProfiles) {
+            if (!window.FB_READY || !uid) return null;
+            const { db, doc, getDoc } = window.FB;
+            const isShared = (sharedProfiles || []).includes(profileId);
+            const basePath = isShared
+                ? ['sharedProfiles', profileId]
+                : ['users', uid, 'profiles', profileId];
+
+            try {
+                const profileDoc = await getDoc(doc(db, ...basePath));
+                if (!profileDoc.exists()) return null;
+                const chunkCount = profileDoc.data().chunkCount || 0;
+                if (chunkCount === 0) return [];
+                const chunkDocs = await Promise.all(
+                    Array.from({ length: chunkCount }, function(_, i) {
+                        return getDoc(doc(db, ...basePath, 'chunks', String(i)));
+                    })
+                );
+                return chunkDocs.flatMap(function(d) { return d.exists() ? d.data().transactions : []; });
+            } catch(e) {
+                console.error('loadTransactionsFromFirestore error:', e);
+                return null;
+            }
+        };
+
+        // Salva metadata account su Firestore
+        window.syncAccountsToFirestore = async function(uid, accounts, activeAccountId) {
+            if (!window.FB_READY || !uid) return;
+            const { db, doc, setDoc } = window.FB;
+            try {
+                await setDoc(doc(db, 'users', uid), {
+                    accounts: accounts,
+                    activeAccountId: activeAccountId,
+                    updatedAt: Date.now()
+                }, { merge: true });
+            } catch(e) {
+                console.error('syncAccountsToFirestore error:', e);
+            }
+        };
+
+        // Salva budget/settings profilo su Firestore
+        window.syncProfileMetaToFirestore = async function(profileId, uid, budgets, settings, sharedProfiles) {
+            if (!window.FB_READY || !uid) return;
+            const { db, doc, setDoc } = window.FB;
+            const isShared = (sharedProfiles || []).includes(profileId);
+            const basePath = isShared
+                ? ['sharedProfiles', profileId]
+                : ['users', uid, 'profiles', profileId];
+            try {
+                await setDoc(doc(db, ...basePath), {
+                    budgets: budgets || {},
+                    settings: settings || {},
+                    updatedAt: Date.now()
+                }, { merge: true });
+            } catch(e) {
+                console.error('syncProfileMetaToFirestore error:', e);
+            }
+        };
+
+        // ---- INVITE SYSTEM ----
+
+        // Genera codice invito per un profilo condiviso (valido 7 giorni)
+        window.generateInviteCode = async function(profileId, uid) {
+            if (!window.FB_READY || !uid) return null;
+            const { db, collection, addDoc, query, where, getDocs } = window.FB;
+            // Cancella inviti precedenti per questo profilo
+            try {
+                const q = query(collection(db, 'invites'), where('profileId', '==', profileId), where('ownerId', '==', uid));
+                const snap = await getDocs(q);
+                snap.forEach(d => window.FB.deleteDoc(d.ref));
+            } catch(e) {}
+            // Crea nuovo invito
+            const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+            await addDoc(collection(db, 'invites'), {
+                code,
+                profileId,
+                ownerId: uid,
+                createdAt: Date.now(),
+                expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000
+            });
+            return code;
+        };
+
+        // Unisciti a un profilo condiviso con codice invito
+        window.joinWithInviteCode = async function(code, uid, userAccounts) {
+            if (!window.FB_READY || !uid) return null;
+            const { db, collection, query, where, getDocs, doc, getDoc, setDoc } = window.FB;
+            const q = query(collection(db, 'invites'), where('code', '==', code.toUpperCase().trim()));
+            const snap = await getDocs(q);
+            if (snap.empty) throw new Error('Codice non trovato o già usato');
+            const invite = snap.docs[0].data();
+            if (invite.expiresAt < Date.now()) throw new Error('Codice scaduto (valido 7 giorni)');
+            const { profileId } = invite;
+            // Ottieni dati profilo dal proprietario
+            const ownerUserDoc = await getDoc(doc(db, 'users', invite.ownerId));
+            let accountInfo = { id: profileId, name: 'Account condiviso', icon: '👥', color: '#9C27B0', shared: true };
+            if (ownerUserDoc.exists()) {
+                const ownerAccounts = ownerUserDoc.data().accounts || [];
+                const found = ownerAccounts.find(a => a.id === profileId);
+                if (found) accountInfo = { ...found, shared: true };
+            }
+            // Aggiungi uid ai members del profilo condiviso
+            const profileRef = doc(db, 'sharedProfiles', profileId);
+            const profileSnap = await getDoc(profileRef);
+            if (profileSnap.exists()) {
+                const members = profileSnap.data().members || [];
+                if (!members.includes(uid)) {
+                    await setDoc(profileRef, { members: [...members, uid] }, { merge: true });
+                }
+            } else {
+                await setDoc(profileRef, { members: [invite.ownerId, uid], uid: invite.ownerId });
+            }
+            return accountInfo;
+        };
+
+        // Assicura che il creatore del profilo condiviso sia in members
+        window.ensureSharedProfileMembers = async function(profileId, uid) {
+            if (!window.FB_READY || !uid) return;
+            const { db, doc, getDoc, setDoc } = window.FB;
+            const ref = doc(db, 'sharedProfiles', profileId);
+            const snap = await getDoc(ref);
+            if (!snap.exists()) {
+                await setDoc(ref, { members: [uid], uid });
+            } else {
+                const members = snap.data().members || [];
+                if (!members.includes(uid)) {
+                    await setDoc(ref, { members: [...members, uid] }, { merge: true });
+                }
+            }
+        };
     </script>
 
     <script type="text/babel">
@@ -1022,6 +1227,17 @@
         // ============ FUNZIONI SQLite → definite in script separato (window.import1MoneyDB) ============
 
         function App() {
+            // ============ FIREBASE AUTH ============
+            const [user, setUser] = useState(null);
+            const [authLoading, setAuthLoading] = useState(true);
+            const [showLoginModal, setShowLoginModal] = useState(false);
+            const [isSyncing, setIsSyncing] = useState(false);
+            const [showShareModal, setShowShareModal] = useState(false); // modale condivisione
+            const [showJoinModal, setShowJoinModal] = useState(false);   // modale unisciti
+            const userRef = useRef(null); // ref per accesso in closure async
+            const sharedProfiles = useRef([]); // es: ['famiglia']
+            const snapshotUnsubRef = useRef(null); // cleanup real-time listener
+
             // ============ ACCOUNT MULTIPLI ============
             const [accounts, setAccounts] = useState([]);
             const isLoadingTransactions = useRef(false);
@@ -1079,8 +1295,8 @@
                     const oldSettings = localStorage.getItem('moneyTrackerSettings');
                     
                     const defaultAccounts = [
-                        { id: 'famiglia', name: 'Spese Famiglia', icon: '👨‍👩‍👧', color: '#9C27B0' },
-                        { id: 'personale', name: 'Spese Personali', icon: '😊', color: '#FF9800' }
+                        { id: 'famiglia', name: 'Spese Famiglia', icon: '👨‍👩‍👧', color: '#9C27B0', shared: true },
+                        { id: 'personale', name: 'Spese Personali', icon: '😊', color: '#FF9800', shared: false }
                     ];
                     
                     setAccounts(defaultAccounts);
@@ -1095,6 +1311,72 @@
                     if (oldSettings) localStorage.setItem('account_famiglia_settings', oldSettings);
                 }
             }, []);
+
+            // ============ FIREBASE AUTH LISTENER ============
+            useEffect(() => {
+                if (!window.FB_READY) {
+                    // Firebase non disponibile → funziona offline
+                    setAuthLoading(false);
+                    return;
+                }
+                const unsubscribe = window.FB.onAuthStateChanged(window.FB.auth, async (firebaseUser) => {
+                    userRef.current = firebaseUser;
+                    setUser(firebaseUser);
+                    setAuthLoading(false);
+                    if (!firebaseUser) {
+                        setShowLoginModal(true);
+                    } else {
+                        setShowLoginModal(false);
+                        await initFirestoreData(firebaseUser);
+                    }
+                });
+                return () => unsubscribe();
+            }, []);
+
+            // Inizializza dati da Firestore al login
+            const initFirestoreData = async (firebaseUser) => {
+                const { db, doc, setDoc, getDoc } = window.FB;
+                // Aggiorna sharedProfiles ref basandosi sugli account con shared:true
+                const localAccounts = localStorage.getItem('moneyTrackerAccounts');
+                if (localAccounts) {
+                    const accs = JSON.parse(localAccounts);
+                    sharedProfiles.current = accs.filter(a => a.shared).map(a => a.id);
+                }
+                try {
+                    const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+                    if (userDoc.exists()) {
+                        const data = userDoc.data();
+                        // Aggiorna accounts da Firestore se presenti
+                        if (data.accounts && data.accounts.length > 0) {
+                            setAccounts(data.accounts);
+                            sharedProfiles.current = data.accounts.filter(a => a.shared).map(a => a.id);
+                            const activeId = data.activeAccountId || data.accounts[0]?.id;
+                            setActiveAccountId(activeId);
+                            window._activeProfileId = activeId;
+                            localStorage.setItem('moneyTrackerAccounts', JSON.stringify(data.accounts));
+                            localStorage.setItem('moneyTrackerActiveAccount', activeId);
+                        }
+                    } else {
+                        // Primo login: push dati locali → Firestore
+                        const savedAccounts = localStorage.getItem('moneyTrackerAccounts');
+                        const savedActiveId = localStorage.getItem('moneyTrackerActiveAccount');
+                        if (savedAccounts) {
+                            await setDoc(doc(db, 'users', firebaseUser.uid), {
+                                accounts: JSON.parse(savedAccounts),
+                                activeAccountId: savedActiveId,
+                                email: firebaseUser.email,
+                                updatedAt: Date.now()
+                            });
+                        }
+                    }
+                    // Assicura che l'utente sia registrato come member in tutti i profili condivisi
+                    for (const profileId of sharedProfiles.current) {
+                        await window.ensureSharedProfileMembers(profileId, firebaseUser.uid);
+                    }
+                } catch(e) {
+                    console.error('initFirestoreData error:', e);
+                }
+            };
 
             // ============ CARICA DATI ACCOUNT ATTIVO ============
             useEffect(() => {
@@ -1114,7 +1396,7 @@
                 // Carica transazioni da IndexedDB
                 isLoadingTransactions.current = true;
                 setTransactions([]);
-                window.loadTransactionsFromDB(activeAccountId).then((txs) => {
+                window.loadTransactionsFromDB(activeAccountId).then(async (txs) => {
                     // Migrazione: se IndexedDB è vuoto, controlla localStorage vecchio
                     if (txs.length === 0) {
                         const old = localStorage.getItem(prefix + 'transactions');
@@ -1122,7 +1404,6 @@
                             try {
                                 const oldTxs = JSON.parse(old);
                                 if (oldTxs.length > 0) {
-                                    // Migra da localStorage a IndexedDB
                                     window.saveTransactionsToDB(activeAccountId, oldTxs).then(() => {
                                         window.deleteTransactionsFromDB(activeAccountId);
                                         isLoadingTransactions.current = false;
@@ -1132,12 +1413,27 @@
                                 }
                             } catch(e) {}
                         }
+                        // IndexedDB vuoto e localStorage vuoto → prova Firestore
+                        if (window.FB_READY && userRef.current) {
+                            try {
+                                const firestoreTxs = await window.loadTransactionsFromFirestore(
+                                    activeAccountId, userRef.current.uid, sharedProfiles.current
+                                );
+                                if (firestoreTxs && firestoreTxs.length > 0) {
+                                    await window.saveTransactionsToDB(activeAccountId, firestoreTxs);
+                                    isLoadingTransactions.current = false;
+                                    setTransactions(firestoreTxs);
+                                    return;
+                                }
+                            } catch(e) {
+                                console.error('Firestore fallback load error:', e);
+                            }
+                        }
                     }
                     isLoadingTransactions.current = false;
                     setTransactions(txs);
                 }).catch((e) => {
                     console.error('Errore caricamento IndexedDB:', e);
-                    // Fallback localStorage
                     const old = localStorage.getItem(prefix + 'transactions');
                     setTransactions(old ? JSON.parse(old) : []);
                 });
@@ -1151,11 +1447,57 @@
             // ============ SALVA DATI ACCOUNT ATTIVO ============
             useEffect(() => {
                 if (!activeAccountId || transactions.length === 0) return;
-                if (isLoadingTransactions.current) return; // non salvare durante il caricamento
+                if (isLoadingTransactions.current) return;
+                // Salva su IndexedDB (locale)
                 window.saveTransactionsToDB(activeAccountId, transactions).catch((e) => {
                     console.error('Errore salvataggio IndexedDB:', e);
                 });
+                // Sync su Firestore in background (se loggato)
+                if (window.FB_READY && userRef.current) {
+                    window.syncTransactionsToFirestore(
+                        activeAccountId, transactions, userRef.current.uid, sharedProfiles.current
+                    ).catch(e => console.error('Firestore sync error:', e));
+                }
             }, [transactions, activeAccountId]);
+
+            // ============ REAL-TIME LISTENER (profili condivisi) ============
+            useEffect(() => {
+                // Pulisci listener precedente
+                if (snapshotUnsubRef.current) {
+                    snapshotUnsubRef.current();
+                    snapshotUnsubRef.current = null;
+                }
+                if (!activeAccountId || !window.FB_READY || !userRef.current) return;
+                if (!sharedProfiles.current.includes(activeAccountId)) return; // solo profili condivisi
+
+                const { db, doc, onSnapshot } = window.FB;
+                const profileRef = doc(db, 'sharedProfiles', activeAccountId);
+
+                const unsub = onSnapshot(profileRef, async (snapshot) => {
+                    if (!snapshot.exists()) return;
+                    const data = snapshot.data();
+                    // Ignora se siamo stati noi a scrivere (evita loop echo)
+                    if (data.lastWriterUid && data.lastWriterUid === userRef.current?.uid) return;
+                    if (!data.updatedAt) return;
+
+                    // Ricarica transazioni da Firestore
+                    try {
+                        const txs = await window.loadTransactionsFromFirestore(
+                            activeAccountId, userRef.current.uid, sharedProfiles.current
+                        );
+                        if (txs && txs.length >= 0) {
+                            isLoadingTransactions.current = false;
+                            setTransactions(txs);
+                            window.saveTransactionsToDB(activeAccountId, txs).catch(() => {});
+                        }
+                    } catch(e) {
+                        console.error('Real-time sync error:', e);
+                    }
+                });
+
+                snapshotUnsubRef.current = unsub;
+                return () => { unsub(); snapshotUnsubRef.current = null; };
+            }, [activeAccountId, user]);
 
             useEffect(() => {
                 if (!activeAccountId) return;
@@ -1475,6 +1817,8 @@
                 const updated = [...accounts, newAccount];
                 setAccounts(updated);
                 localStorage.setItem('moneyTrackerAccounts', JSON.stringify(updated));
+                if (window.FB_READY && userRef.current)
+                    window.syncAccountsToFirestore(userRef.current.uid, updated, activeAccountId);
                 return newAccount;
             };
 
@@ -1482,6 +1826,8 @@
                 const updated = accounts.map(a => a.id === accountId ? { ...a, ...newData } : a);
                 setAccounts(updated);
                 localStorage.setItem('moneyTrackerAccounts', JSON.stringify(updated));
+                if (window.FB_READY && userRef.current)
+                    window.syncAccountsToFirestore(userRef.current.uid, updated, activeAccountId);
             };
 
             const deleteAccount = (accountId) => {
@@ -1503,6 +1849,8 @@
                 const updated = accounts.filter(a => a.id !== accountId);
                 setAccounts(updated);
                 localStorage.setItem('moneyTrackerAccounts', JSON.stringify(updated));
+                if (window.FB_READY && userRef.current)
+                    window.syncAccountsToFirestore(userRef.current.uid, updated, activeAccountId);
                 
                 // Switch a primo account disponibile
                 if (activeAccountId === accountId) {
@@ -1979,14 +2327,8 @@
                 showManageAccountsModal, showCategoryMenu, showEditCategoryModal, categoryFilter]);
             const handleCategoryClick = (category, event) => {
                 event.stopPropagation();
-                // Tap singolo -> apre menu contestuale
-                const rect = event.currentTarget.getBoundingClientRect();
-                setShowCategoryMenu({
-                    categoryId: category.id,
-                    category: category,
-                    x: rect.left + rect.width / 2,
-                    y: rect.bottom + 5
-                });
+                // Tap singolo -> aggiungi transazione con categoria pre-selezionata
+                setShowModal({ preselectedCategory: category.id });
             };
 
             const handleCategoryLongPress = (category, event) => {
@@ -2253,6 +2595,54 @@
 
             return (
                 <div className="app-container">
+                    {/* ── Auth Loading ── */}
+                    {authLoading && (
+                        <div style={{
+                            position: 'fixed', inset: 0, zIndex: 9998,
+                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                            display: 'flex', flexDirection: 'column',
+                            alignItems: 'center', justifyContent: 'center', color: 'white'
+                        }}>
+                            <div style={{ fontSize: '48px', marginBottom: '16px' }}>💰</div>
+                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker</div>
+                            <div style={{ fontSize: '13px', marginTop: '8px', opacity: 0.7 }}>Caricamento...</div>
+                        </div>
+                    )}
+
+                    {/* ── Login Modal ── */}
+                    {showLoginModal && <LoginModal onClose={() => setShowLoginModal(false)} />}
+
+                    {/* ── Share Modal ── */}
+                    {showShareModal && user && (
+                        <ShareModal
+                            account={getActiveAccount()}
+                            uid={user.uid}
+                            onClose={() => setShowShareModal(false)}
+                        />
+                    )}
+
+                    {/* ── Join Modal ── */}
+                    {showJoinModal && user && (
+                        <JoinModal
+                            uid={user.uid}
+                            onClose={() => setShowJoinModal(false)}
+                            onJoined={(accountInfo) => {
+                                // Aggiungi il nuovo account condiviso alla lista
+                                const exists = accounts.find(a => a.id === accountInfo.id);
+                                if (!exists) {
+                                    const updated = [...accounts, accountInfo];
+                                    setAccounts(updated);
+                                    sharedProfiles.current = updated.filter(a => a.shared).map(a => a.id);
+                                    localStorage.setItem('moneyTrackerAccounts', JSON.stringify(updated));
+                                    if (window.FB_READY && user)
+                                        window.syncAccountsToFirestore(user.uid, updated, activeAccountId);
+                                }
+                                setShowJoinModal(false);
+                                alert(`✅ Accesso a "${accountInfo.name}" riuscito! Selezionalo dal menu in alto.`);
+                            }}
+                        />
+                    )}
+
                     <div className="header" style={{ background: getActiveAccount()?.color ? `linear-gradient(135deg, ${getActiveAccount().color} 0%, ${getActiveAccount().color}dd 100%)` : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -2272,7 +2662,7 @@
                                 >
                                     {accounts.map(acc => (
                                         <option key={acc.id} value={acc.id}>
-                                            {acc.icon} {acc.name}
+                                            {acc.icon} {acc.name}{acc.shared ? ' 👥' : ''}
                                         </option>
                                     ))}
                                 </select>
@@ -2291,21 +2681,90 @@
                                 >
                                     ➕
                                 </button>
+                                {/* Bottone Condividi (solo su account shared) */}
+                                {user && getActiveAccount()?.shared && (
+                                    <button
+                                        onClick={() => setShowShareModal(true)}
+                                        title="Condividi questo account"
+                                        style={{
+                                            background: 'rgba(255,255,255,0.2)',
+                                            border: 'none', color: 'white',
+                                            padding: '6px 10px', borderRadius: '6px',
+                                            cursor: 'pointer', fontSize: '15px'
+                                        }}
+                                    >👥</button>
+                                )}
+                                {/* Bottone Unisciti (per entrare in account altrui) */}
+                                {user && (
+                                    <button
+                                        onClick={() => setShowJoinModal(true)}
+                                        title="Entra con codice invito"
+                                        style={{
+                                            background: 'rgba(255,255,255,0.15)',
+                                            border: '1px solid rgba(255,255,255,0.4)',
+                                            color: 'white',
+                                            padding: '4px 9px', borderRadius: '6px',
+                                            cursor: 'pointer', fontSize: '13px'
+                                        }}
+                                    >🔗</button>
+                                )}
                             </div>
-                            <button 
-                                onClick={() => setShowSettingsModal(true)}
-                                style={{
-                                    background: 'rgba(255,255,255,0.2)',
-                                    border: 'none',
-                                    color: 'white',
-                                    padding: '8px 16px',
-                                    borderRadius: '8px',
-                                    cursor: 'pointer',
-                                    fontSize: '20px'
-                                }}
-                            >
-                                ⚙️
-                            </button>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                {/* Avatar utente / login */}
+                                {user ? (
+                                    <button
+                                        onClick={async () => {
+                                            if (window.confirm(`Esci da ${user.email || user.displayName || 'account'}?`)) {
+                                                await window.FB.signOut(window.FB.auth);
+                                                setUser(null);
+                                                setShowLoginModal(true);
+                                            }
+                                        }}
+                                        title={`Loggato come ${user.email || user.displayName}`}
+                                        style={{
+                                            background: 'rgba(255,255,255,0.25)',
+                                            border: 'none', color: 'white',
+                                            padding: '6px 10px', borderRadius: '8px',
+                                            cursor: 'pointer', fontSize: '13px',
+                                            display: 'flex', alignItems: 'center', gap: '5px'
+                                        }}
+                                    >
+                                        {user.photoURL
+                                            ? <img src={user.photoURL} style={{ width: 22, height: 22, borderRadius: '50%' }} />
+                                            : '👤'
+                                        }
+                                        <span style={{ maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {user.displayName || user.email?.split('@')[0]}
+                                        </span>
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={() => setShowLoginModal(true)}
+                                        style={{
+                                            background: 'rgba(255,255,255,0.2)',
+                                            border: 'none', color: 'white',
+                                            padding: '6px 12px', borderRadius: '8px',
+                                            cursor: 'pointer', fontSize: '13px'
+                                        }}
+                                    >
+                                        🔑 Login
+                                    </button>
+                                )}
+                                <button 
+                                    onClick={() => setShowSettingsModal(true)}
+                                    style={{
+                                        background: 'rgba(255,255,255,0.2)',
+                                        border: 'none',
+                                        color: 'white',
+                                        padding: '8px 16px',
+                                        borderRadius: '8px',
+                                        cursor: 'pointer',
+                                        fontSize: '20px'
+                                    }}
+                                >
+                                    ⚙️
+                                </button>
+                            </div>
                         </div>
                         <div style={{ marginTop: '10px' }}>
                             <select 
@@ -3067,10 +3526,10 @@
                 if (!accMenu) return null;
                 const { acc, x, y } = accMenu;
                 React.useEffect(() => {
-                    const close = () => setAccMenu(null);
-                    setTimeout(() => document.addEventListener('click', close), 0);
-                    return () => document.removeEventListener('click', close);
-                }, []);
+                    const close = (e) => setAccMenu(null);
+                    const timer = setTimeout(() => document.addEventListener('click', close, { once: true }), 100);
+                    return () => { clearTimeout(timer); document.removeEventListener('click', close); };
+                }, [accMenu]);
                 const menuBtn = (onClick, icon, label) => (
                     <button onClick={onClick} style={{ width:'100%', padding:'12px 16px', border:'none', background:'none', textAlign:'left', cursor:'pointer', display:'flex', alignItems:'center', gap:'12px', fontSize:'14px', transition:'background 0.2s' }}
                         onMouseOver={(e) => e.currentTarget.style.background='#f5f5f5'}
@@ -4222,8 +4681,8 @@
         function CategoryContextMenu({ category, x, y, onClose, onAddMovement, onViewMovements, onEditCategory, onBudget, onSort }) {
             React.useEffect(() => {
                 const handleClickOutside = () => onClose();
-                setTimeout(() => document.addEventListener('click', handleClickOutside), 0);
-                return () => document.removeEventListener('click', handleClickOutside);
+                const timer = setTimeout(() => document.addEventListener('click', handleClickOutside, { once: true }), 100);
+                return () => { clearTimeout(timer); document.removeEventListener('click', handleClickOutside); };
             }, []);
 
             return (
@@ -5890,6 +6349,297 @@
                         <div style={{ fontSize: '12px', color: '#666', marginBottom: '5px' }}>N° Transazioni</div>
                         <div style={{ fontSize: '18px', fontWeight: 'bold' }}>
                             {transactions.length} transazioni questo mese
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ============ SHARE MODAL (genera codice invito) ============
+        function ShareModal({ account, uid, onClose }) {
+            const [code, setCode] = useState('');
+            const [loading, setLoading] = useState(false);
+            const [copied, setCopied] = useState(false);
+
+            const generate = async () => {
+                setLoading(true);
+                try {
+                    const c = await window.generateInviteCode(account.id, uid);
+                    setCode(c);
+                } catch(e) {
+                    alert('Errore: ' + e.message);
+                } finally { setLoading(false); }
+            };
+
+            const copy = () => {
+                navigator.clipboard?.writeText(code);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+            };
+
+            return (
+                <div className="modal" onClick={onClose}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h2 className="modal-title">👥 Condividi "{account.name}"</h2>
+                            <button className="close-btn" onClick={onClose}>×</button>
+                        </div>
+                        <div style={{ padding: '20px' }}>
+                            <p style={{ color: '#666', fontSize: '14px', marginBottom: '20px' }}>
+                                Genera un codice da dare all'altro utente. Il codice è valido <strong>7 giorni</strong>.
+                            </p>
+                            {!code ? (
+                                <button onClick={generate} disabled={loading} style={{
+                                    width: '100%', padding: '14px',
+                                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                    color: 'white', border: 'none', borderRadius: '10px',
+                                    fontSize: '16px', fontWeight: '700', cursor: 'pointer'
+                                }}>
+                                    {loading ? '⏳ Generazione...' : '🔑 Genera Codice Invito'}
+                                </button>
+                            ) : (
+                                <div>
+                                    <div style={{
+                                        background: '#f3e5f5', border: '2px dashed #9C27B0',
+                                        borderRadius: '12px', padding: '20px',
+                                        textAlign: 'center', marginBottom: '16px'
+                                    }}>
+                                        <div style={{ fontSize: '13px', color: '#888', marginBottom: '8px' }}>
+                                            Codice invito (scade tra 7 giorni)
+                                        </div>
+                                        <div style={{
+                                            fontSize: '36px', fontWeight: '900',
+                                            letterSpacing: '8px', color: '#6a1b9a',
+                                            fontFamily: 'monospace'
+                                        }}>{code}</div>
+                                    </div>
+                                    <button onClick={copy} style={{
+                                        width: '100%', padding: '12px',
+                                        background: copied ? '#4CAF50' : '#fff',
+                                        border: '2px solid ' + (copied ? '#4CAF50' : '#9C27B0'),
+                                        color: copied ? 'white' : '#9C27B0',
+                                        borderRadius: '10px', fontSize: '15px',
+                                        fontWeight: '600', cursor: 'pointer'
+                                    }}>
+                                        {copied ? '✅ Copiato!' : '📋 Copia Codice'}
+                                    </button>
+                                    <p style={{ fontSize: '12px', color: '#aaa', textAlign: 'center', marginTop: '12px' }}>
+                                        L'altro utente dovrà inserire questo codice nell'app dopo aver fatto login.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ============ JOIN MODAL (entra con codice invito) ============
+        function JoinModal({ uid, onJoined, onClose }) {
+            const [code, setCode] = useState('');
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState('');
+
+            const handleJoin = async () => {
+                if (!code.trim()) return;
+                setLoading(true); setError('');
+                try {
+                    const accountInfo = await window.joinWithInviteCode(code, uid);
+                    onJoined(accountInfo);
+                } catch(e) {
+                    setError(e.message);
+                } finally { setLoading(false); }
+            };
+
+            return (
+                <div className="modal" onClick={onClose}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h2 className="modal-title">🔗 Unisciti a un Account</h2>
+                            <button className="close-btn" onClick={onClose}>×</button>
+                        </div>
+                        <div style={{ padding: '20px' }}>
+                            <p style={{ color: '#666', fontSize: '14px', marginBottom: '20px' }}>
+                                Inserisci il codice che ti ha mandato l'altro utente per accedere all'account condiviso.
+                            </p>
+                            <input
+                                type="text"
+                                placeholder="Es. ABC123"
+                                value={code}
+                                onChange={e => setCode(e.target.value.toUpperCase())}
+                                onKeyDown={e => e.key === 'Enter' && handleJoin()}
+                                style={{
+                                    width: '100%', padding: '14px',
+                                    fontSize: '22px', fontWeight: '700',
+                                    letterSpacing: '6px', textAlign: 'center',
+                                    border: '2px solid #e0e0e0', borderRadius: '10px',
+                                    marginBottom: '14px', boxSizing: 'border-box',
+                                    fontFamily: 'monospace', outline: 'none'
+                                }}
+                                maxLength={6}
+                            />
+                            {error && (
+                                <div style={{
+                                    background: '#fff0f0', color: '#c62828',
+                                    padding: '10px', borderRadius: '8px',
+                                    marginBottom: '14px', fontSize: '13px'
+                                }}>⚠️ {error}</div>
+                            )}
+                            <button onClick={handleJoin} disabled={loading || !code.trim()} style={{
+                                width: '100%', padding: '14px',
+                                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                color: 'white', border: 'none', borderRadius: '10px',
+                                fontSize: '16px', fontWeight: '700', cursor: 'pointer',
+                                opacity: (loading || !code.trim()) ? 0.6 : 1
+                            }}>
+                                {loading ? '⏳ Verifica...' : '🔗 Unisciti'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ============ LOGIN MODAL ============
+        function LoginModal({ onClose }) {
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [isSignup, setIsSignup] = useState(false);
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState('');
+
+            const handleGoogleLogin = async () => {
+                if (!window.FB_READY) return;
+                setLoading(true); setError('');
+                try {
+                    const provider = new window.FB.GoogleAuthProvider();
+                    await window.FB.signInWithPopup(window.FB.auth, provider);
+                    onClose();
+                } catch(e) {
+                    setError(e.message || 'Errore login Google');
+                } finally { setLoading(false); }
+            };
+
+            const handleEmailLogin = async () => {
+                if (!window.FB_READY || !email || !password) return;
+                setLoading(true); setError('');
+                try {
+                    if (isSignup) {
+                        await window.FB.createUserWithEmailAndPassword(window.FB.auth, email, password);
+                    } else {
+                        await window.FB.signInWithEmailAndPassword(window.FB.auth, email, password);
+                    }
+                    onClose();
+                } catch(e) {
+                    const msgs = {
+                        'auth/user-not-found': 'Account non trovato',
+                        'auth/wrong-password': 'Password errata',
+                        'auth/email-already-in-use': 'Email già registrata',
+                        'auth/weak-password': 'Password troppo corta (min 6 caratteri)',
+                        'auth/invalid-email': 'Email non valida',
+                        'auth/invalid-credential': 'Email o password errati'
+                    };
+                    setError(msgs[e.code] || e.message);
+                } finally { setLoading(false); }
+            };
+
+            return (
+                <div style={{
+                    position: 'fixed', inset: 0, zIndex: 9999,
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    padding: '20px'
+                }}>
+                    <div style={{
+                        background: 'white', borderRadius: '20px',
+                        padding: '30px', width: '100%', maxWidth: '360px',
+                        boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+                    }}>
+                        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+                            <div style={{ fontSize: '48px', marginBottom: '8px' }}>💰</div>
+                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker</h2>
+                            <p style={{ margin: '6px 0 0', color: '#888', fontSize: '14px' }}>
+                                {isSignup ? 'Crea un account' : 'Accedi per sincronizzare i dati'}
+                            </p>
+                        </div>
+
+                        {/* Google login */}
+                        <button onClick={handleGoogleLogin} disabled={loading} style={{
+                            width: '100%', padding: '13px', marginBottom: '16px',
+                            background: '#fff', border: '2px solid #e0e0e0',
+                            borderRadius: '10px', fontSize: '15px', fontWeight: '600',
+                            cursor: 'pointer', display: 'flex', alignItems: 'center',
+                            justifyContent: 'center', gap: '10px', color: '#333',
+                            transition: 'border-color 0.2s'
+                        }}>
+                            <span style={{ fontSize: '20px' }}>🔵</span>
+                            Continua con Google
+                        </button>
+
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: '10px',
+                            margin: '16px 0', color: '#bbb', fontSize: '13px'
+                        }}>
+                            <div style={{ flex: 1, height: '1px', background: '#eee' }} />
+                            oppure
+                            <div style={{ flex: 1, height: '1px', background: '#eee' }} />
+                        </div>
+
+                        {/* Email / Password */}
+                        <input type="email" placeholder="Email" value={email}
+                            onChange={e => setEmail(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && handleEmailLogin()}
+                            style={{
+                                width: '100%', padding: '12px', marginBottom: '10px',
+                                border: '1px solid #e0e0e0', borderRadius: '8px',
+                                fontSize: '14px', boxSizing: 'border-box', outline: 'none'
+                            }}
+                        />
+                        <input type="password" placeholder="Password" value={password}
+                            onChange={e => setPassword(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && handleEmailLogin()}
+                            style={{
+                                width: '100%', padding: '12px', marginBottom: '14px',
+                                border: '1px solid #e0e0e0', borderRadius: '8px',
+                                fontSize: '14px', boxSizing: 'border-box', outline: 'none'
+                            }}
+                        />
+
+                        {error && (
+                            <div style={{
+                                background: '#fff0f0', color: '#c62828', padding: '10px 12px',
+                                borderRadius: '8px', fontSize: '13px', marginBottom: '12px',
+                                border: '1px solid #ffcdd2'
+                            }}>⚠️ {error}</div>
+                        )}
+
+                        <button onClick={handleEmailLogin} disabled={loading} style={{
+                            width: '100%', padding: '13px',
+                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                            color: 'white', border: 'none', borderRadius: '10px',
+                            fontSize: '15px', fontWeight: '700', cursor: 'pointer',
+                            opacity: loading ? 0.7 : 1
+                        }}>
+                            {loading ? '⏳ Attendi...' : (isSignup ? 'Registrati' : 'Accedi')}
+                        </button>
+
+                        <div style={{ textAlign: 'center', marginTop: '16px' }}>
+                            <button onClick={() => { setIsSignup(!isSignup); setError(''); }} style={{
+                                background: 'none', border: 'none', color: '#667eea',
+                                cursor: 'pointer', fontSize: '13px', textDecoration: 'underline'
+                            }}>
+                                {isSignup ? 'Hai già un account? Accedi' : 'Non hai un account? Registrati'}
+                            </button>
+                        </div>
+
+                        {/* Opzione offline */}
+                        <div style={{ textAlign: 'center', marginTop: '20px', borderTop: '1px solid #f0f0f0', paddingTop: '16px' }}>
+                            <button onClick={onClose} style={{
+                                background: 'none', border: 'none', color: '#aaa',
+                                cursor: 'pointer', fontSize: '12px'
+                            }}>
+                                Continua senza account (solo locale)
+                            </button>
                         </div>
                     </div>
                 </div>
