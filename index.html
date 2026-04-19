@@ -2209,12 +2209,88 @@
                     importedTransactions.sort((a, b) => new Date(b.date) - new Date(a.date));
                     setTransactions(prev => [...importedTransactions, ...prev]);
 
+                    // ── PARSING DEBITI (righe finali del CSV) ──
+                    // Struttura anomala: nome in col DATA, saldo in col TIPOLOGIA, "EUR" in col DAL CONTO
+                    const importedDebts = [];
+                    const DEBT_ICONS = {
+                        findomestic:'🏦', bbva:'🏦', banca:'🏦', banco:'🏦',
+                        valentina:'👤', franco:'👤', cicci:'👤', avvocato:'⚖️',
+                        camper:'🚐', fondo:'💰', mutuo:'🏠', casa:'🏠',
+                        auto:'🚗', macchina:'🚗', prestito:'💳'
+                    };
+                    const getDebtIcon = (name) => {
+                        const n = name.toLowerCase();
+                        for (const [k, icon] of Object.entries(DEBT_ICONS)) {
+                            if (n.includes(k)) return icon;
+                        }
+                        return '💰';
+                    };
+
+                    for (let i = 1; i < lines.length; i++) {
+                        try {
+                            const fields = [];
+                            let cur = '', inQ = false;
+                            for (let j = 0; j < lines[i].length; j++) {
+                                const ch = lines[i][j];
+                                if (ch === '"') { if (inQ && lines[i][j+1]==='"'){cur+='"';j++;} else inQ=!inQ; }
+                                else if (ch === ',' && !inQ) { fields.push(cur.trim()); cur=''; }
+                                else cur += ch;
+                            }
+                            fields.push(cur.trim());
+
+                            const col0 = fields[0] || ''; // nome del conto/debito
+                            const col1 = fields[1] || ''; // saldo (numero)
+                            const col2 = fields[2] || ''; // "EUR" o vuoto
+                            const col3 = fields[3] || '';
+
+                            // È una riga di saldo se: col2="EUR", col3 vuota, col1 è un numero
+                            const isBalanceRow = col2.trim().toUpperCase() === 'EUR' &&
+                                                 !col3.trim() &&
+                                                 col1.trim() !== '' &&
+                                                 !isNaN(parseFloat(col1.replace(',','.')));
+
+                            if (!isBalanceRow) continue;
+
+                            const balance = parseFloat(col1.replace(',','.'));
+                            const name = col0.trim();
+
+                            if (!name || balance === 0) continue; // skip vuoti e zero
+
+                            importedDebts.push({
+                                id: Date.now() + i,
+                                name,
+                                type: balance < 0 ? 'devo' : 'mi_devono',
+                                totalAmount: Math.abs(balance),
+                                payments: [],
+                                completed: false,
+                                icon: getDebtIcon(name),
+                                color: balance < 0 ? '#f44336' : '#4CAF50',
+                                startDate: new Date().toISOString(),
+                                note: 'Importato da 1Money'
+                            });
+                        } catch(e) {}
+                    }
+
+                    // Merge debiti importati con quelli esistenti (no duplicati per nome)
+                    if (importedDebts.length > 0) {
+                        setDebts(prev => {
+                            const merged = [...prev];
+                            importedDebts.forEach(d => {
+                                if (!merged.find(e => e.name.toLowerCase() === d.name.toLowerCase())) {
+                                    merged.push(d);
+                                }
+                            });
+                            return merged;
+                        });
+                    }
+
                     return {
                         success: true,
                         imported: importedTransactions.length,
                         newCategories: newExpenseCats.length + newIncomeCats.length,
                         newAccounts: newAccounts.length,
-                        skipped: skippedCount
+                        skipped: skippedCount,
+                        importedDebts: importedDebts.length
                     };
 
                 } catch (error) {
@@ -2341,8 +2417,10 @@
                         msg += `📥 Transazioni importate: ${result.imported}\n`;
                         if (result.newCategories > 0) msg += `🏷️ Nuove categorie create: ${result.newCategories}\n`;
                         if (result.newAccounts > 0)   msg += `💳 Nuovi conti creati: ${result.newAccounts}\n`;
+                        if (result.importedDebts > 0) msg += `📋 Debiti/Crediti importati: ${result.importedDebts}\n`;
                         msg += `⏭️ Trasferimenti saltati: ${result.skipped.trasferimenti}\n`;
                         if (result.skipped.errori > 0) msg += `❌ Righe con errori: ${result.skipped.errori}\n`;
+                        if (result.importedDebts > 0) msg += `\n👉 Vai su Conti → Debiti per vederli.`;
                         alert(msg);
                     } else {
                         alert(`❌ Errore durante l'import:\n${result.error}`);
