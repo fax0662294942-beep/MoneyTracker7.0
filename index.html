@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#4CAF50">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>MoneyTracker 6.0 - Gestione Spese</title>
+    <title>MoneyTracker 8.0 - Gestione Spese</title>
     <link rel="manifest" href="manifest.json">
     <script>
         // Registra Service Worker per funzionamento offline
@@ -402,19 +402,19 @@
         
         .fab {
             position: fixed;
-            bottom: 80px;
+            bottom: 85px;
             right: 20px;
-            width: 60px;
-            height: 60px;
+            width: 62px;
+            height: 62px;
             border-radius: 50%;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
             font-size: 30px;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            box-shadow: 0 4px 20px rgba(102, 126, 234, 0.5);
             cursor: pointer;
             transition: transform 0.2s;
-            z-index: 100;
+            z-index: 500;
         }
         
         .fab:active {
@@ -611,7 +611,7 @@
             display: flex;
             justify-content: space-around;
             padding: 10px 0;
-            z-index: 100;
+            z-index: 400;
         }
         
         .nav-item {
@@ -1327,7 +1327,12 @@
             const [showSQLiteImportModal, setShowSQLiteImportModal] = useState(false);
             const [showManageCategoriesModal, setShowManageCategoriesModal] = useState(false);
             const [showManageAccountsModal, setShowManageAccountsModal] = useState(false);
-            const [categoriesVersion, setCategoriesVersion] = useState(0); // trigger re-render
+            const [categoriesVersion, setCategoriesVersion] = useState(0);
+
+            // ============ DEBITI ============
+            const [debts, setDebts] = useState([]);
+            const [accountSubTab, setAccountSubTab] = useState('conti'); // 'conti' | 'debiti'
+            const [showDebtModal, setShowDebtModal] = useState(false);   // false | debt object (edit) | 'new' // trigger re-render
             
             // ============ DATI ACCOUNT CORRENTE ============
             const [transactions, setTransactions] = useState([]);
@@ -1455,6 +1460,44 @@
                 } catch(e) {
                     console.error('initFirestoreData error:', e);
                 }
+            };
+
+            // ============ DEBITI PERSISTENCE ============
+            useEffect(() => {
+                const saved = localStorage.getItem('moneyTrackerDebts');
+                if (saved) { try { setDebts(JSON.parse(saved)); } catch(e) {} }
+            }, []);
+
+            useEffect(() => {
+                localStorage.setItem('moneyTrackerDebts', JSON.stringify(debts));
+                // Sync Firestore in background
+                if (window.FB_READY && userRef.current) {
+                    const { db, doc, setDoc } = window.FB;
+                    setDoc(doc(db, 'users', userRef.current.uid), { debts, debtsUpdatedAt: Date.now() }, { merge: true })
+                        .catch(e => console.error('debts sync error', e));
+                }
+            }, [debts]);
+
+            const saveDebt = (debtData) => {
+                if (debtData.id) {
+                    setDebts(prev => prev.map(d => d.id === debtData.id ? debtData : d));
+                } else {
+                    setDebts(prev => [{ ...debtData, id: Date.now() }, ...prev]);
+                }
+            };
+
+            const deleteDebt = (debtId) => {
+                if (window.confirm('Eliminare questo debito?'))
+                    setDebts(prev => prev.filter(d => d.id !== debtId));
+            };
+
+            const addDebtPayment = (debtId, amount, note) => {
+                setDebts(prev => prev.map(d => {
+                    if (d.id !== debtId) return d;
+                    const payments = [...(d.payments || []), { date: new Date().toISOString(), amount: parseFloat(amount), note: note || '' }];
+                    const paid = payments.reduce((s, p) => s + p.amount, 0);
+                    return { ...d, payments, completed: paid >= d.totalAmount };
+                }));
             };
 
             // ============ CARICA DATI ACCOUNT ATTIVO ============
@@ -2315,11 +2358,30 @@
                     const mergedExpense = [...existingCats.expense];
                     const mergedIncome = [...existingCats.income];
 
+                    // Mappa: id_importato → id_finale (per correggere le transazioni)
+                    const catIdRemap = {};
+
                     result.categories.expense.forEach(function(cat) {
-                        if (!mergedExpense.find(function(c) { return c.name === cat.name; })) mergedExpense.push(cat);
+                        const existing = mergedExpense.find(function(c) {
+                            return c.name.trim().toLowerCase() === cat.name.trim().toLowerCase();
+                        });
+                        if (existing) {
+                            catIdRemap[cat.id] = existing.id; // usa l'ID già esistente
+                        } else {
+                            mergedExpense.push(cat);
+                            catIdRemap[cat.id] = cat.id;
+                        }
                     });
                     result.categories.income.forEach(function(cat) {
-                        if (!mergedIncome.find(function(c) { return c.name === cat.name; })) mergedIncome.push(cat);
+                        const existing = mergedIncome.find(function(c) {
+                            return c.name.trim().toLowerCase() === cat.name.trim().toLowerCase();
+                        });
+                        if (existing) {
+                            catIdRemap[cat.id] = existing.id;
+                        } else {
+                            mergedIncome.push(cat);
+                            catIdRemap[cat.id] = cat.id;
+                        }
                     });
                     saveCategoriestoStorage({ expense: mergedExpense, income: mergedIncome });
 
@@ -2330,10 +2392,16 @@
                     });
                     saveCustomTransactionAccounts(mergedAccs);
 
-                    setTransactions(function(prev) { return [...result.transactions, ...prev]; });
+                    // Applica remap categorie alle transazioni importate
+                    const remappedTxs = result.transactions.map(function(t) {
+                        return catIdRemap[t.category]
+                            ? Object.assign({}, t, { category: catIdRemap[t.category] })
+                            : t;
+                    });
+
+                    setTransactions(function(prev) { return [...remappedTxs, ...prev]; });
                     setCategoriesVersion(function(v) { return v + 1; });
 
-                    // Ritorna numeri diretti (non oggetti) per il modal
                     return {
                         categories: result.stats.categories,
                         accounts: result.stats.accounts,
@@ -2683,7 +2751,7 @@
                             alignItems: 'center', justifyContent: 'center', color: 'white'
                         }}>
                             <div style={{ fontSize: '48px', marginBottom: '16px' }}>💰</div>
-                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker</div>
+                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 8.0</div>
                             <div style={{ fontSize: '13px', marginTop: '8px', opacity: 0.7 }}>Caricamento...</div>
                         </div>
                     )}
@@ -3042,33 +3110,56 @@
                     )}
 
                     {currentPage === 'accounts' && (
-                        <AccountsView
-                            transactions={filteredTransactions}
-                            activeProfileId={activeAccountId}
-                            onAddMovementForAccount={(accId) => {
-                                setShowModal({ preselectedAccount: accId });
-                            }}
-                            onViewMovementsForAccount={(accId) => {
-                                setCurrentPage('home');
-                            }}
-                            onAdjustBalance={(accId, amount, note) => {
-                                const t = {
-                                    id: Date.now(),
-                                    type: amount >= 0 ? 'income' : 'expense',
-                                    amount: Math.abs(amount),
-                                    category: amount >= 0 ? 'other' : 'other',
-                                    account: accId,
-                                    note: note || '⚖️ Aggiustamento saldo',
-                                    date: new Date().toISOString(),
-                                    isBalanceAdjustment: true
-                                };
-                                setTransactions(prev => [t, ...prev]);
-                            }}
-                            onUpdateAccount={(updatedAcc) => {
-                                const accs = getCustomTransactionAccounts();
-                                const updated = accs.map(a => a.id === updatedAcc.id ? { ...a, ...updatedAcc } : a);
-                                saveCustomTransactionAccounts(updated);
-                            }}
+                        <div>
+                            {/* Sub-tab Conti / Debiti */}
+                            <div style={{ display:'flex', borderBottom:'2px solid #f0f0f0', background:'white', position:'sticky', top:0, zIndex:10 }}>
+                                {[['conti','🏦 Conti'],['debiti','📋 Debiti']].map(([tab,label]) => (
+                                    <button key={tab} onClick={() => setAccountSubTab(tab)} style={{
+                                        flex:1, padding:'12px 0', border:'none', background:'none',
+                                        fontWeight: accountSubTab===tab ? '700' : '400',
+                                        color: accountSubTab===tab ? '#667eea' : '#888',
+                                        borderBottom: accountSubTab===tab ? '2px solid #667eea' : '2px solid transparent',
+                                        marginBottom:'-2px', cursor:'pointer', fontSize:'14px'
+                                    }}>{label}</button>
+                                ))}
+                            </div>
+
+                            {accountSubTab === 'conti' && (
+                                <AccountsView
+                                    transactions={filteredTransactions}
+                                    activeProfileId={activeAccountId}
+                                    onAddMovementForAccount={(accId) => { setShowModal({ preselectedAccount: accId }); }}
+                                    onViewMovementsForAccount={(accId) => { setCurrentPage('home'); }}
+                                    onAdjustBalance={(accId, amount, note) => {
+                                        const t = { id: Date.now(), type: amount>=0?'income':'expense', amount: Math.abs(amount), category:'other', account: accId, note: note||'⚖️ Aggiustamento saldo', date: new Date().toISOString(), isBalanceAdjustment: true };
+                                        setTransactions(prev => [t, ...prev]);
+                                    }}
+                                    onUpdateAccount={(updatedAcc) => {
+                                        const accs = getCustomTransactionAccounts();
+                                        const updated = accs.map(a => a.id===updatedAcc.id ? {...a,...updatedAcc} : a);
+                                        saveCustomTransactionAccounts(updated);
+                                    }}
+                                />
+                            )}
+
+                            {accountSubTab === 'debiti' && (
+                                <DebtView
+                                    debts={debts}
+                                    onAdd={() => setShowDebtModal('new')}
+                                    onEdit={(d) => setShowDebtModal(d)}
+                                    onDelete={deleteDebt}
+                                    onPayment={addDebtPayment}
+                                />
+                            )}
+                        </div>
+                    )}
+
+                    {/* Debt Modal */}
+                    {showDebtModal && (
+                        <DebtModal
+                            debt={showDebtModal === 'new' ? null : showDebtModal}
+                            onSave={(d) => { saveDebt(d); setShowDebtModal(false); }}
+                            onClose={() => setShowDebtModal(false)}
                         />
                     )}
 
@@ -6556,6 +6647,255 @@
             );
         }
 
+        // ============ DEBT VIEW ============
+        function DebtView({ debts, onAdd, onEdit, onDelete, onPayment }) {
+            const [payingDebt, setPayingDebt] = useState(null); // debt object
+            const [payAmount, setPayAmount] = useState('');
+            const [payNote, setPayNote] = useState('');
+
+            const devo    = debts.filter(d => d.type === 'devo'      && !d.completed);
+            const midevo  = debts.filter(d => d.type === 'mi_devono' && !d.completed);
+            const done    = debts.filter(d => d.completed);
+
+            const totalDevo   = devo.reduce((s,d) => s + (d.totalAmount - (d.payments||[]).reduce((x,p)=>x+p.amount,0)), 0);
+            const totalMiDevo = midevo.reduce((s,d) => s + (d.totalAmount - (d.payments||[]).reduce((x,p)=>x+p.amount,0)), 0);
+
+            const remaining = (d) => Math.max(0, d.totalAmount - (d.payments||[]).reduce((s,p)=>s+p.amount,0));
+            const paidPct   = (d) => Math.min(100, Math.round(((d.payments||[]).reduce((s,p)=>s+p.amount,0)) / d.totalAmount * 100));
+            const fmt       = (n) => '€' + (n||0).toLocaleString('it-IT', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+            const DebtCard = ({d, color}) => {
+                const rem = remaining(d);
+                const pct = paidPct(d);
+                return (
+                    <div style={{ background:'white', borderRadius:'12px', padding:'14px', marginBottom:'10px', boxShadow:'0 1px 6px rgba(0,0,0,0.08)', border:`2px solid ${color}22` }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+                            <div style={{ width:44, height:44, borderRadius:'50%', background:d.color||color, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'20px', flexShrink:0 }}>
+                                {d.icon||'💰'}
+                            </div>
+                            <div style={{ flex:1 }}>
+                                <div style={{ fontWeight:'700', fontSize:'15px' }}>{d.name}</div>
+                                <div style={{ fontSize:'13px', color: color, fontWeight:'600' }}>{fmt(rem)} rimanenti</div>
+                                {d.note && <div style={{ fontSize:'11px', color:'#aaa', marginTop:'2px' }}>{d.note}</div>}
+                            </div>
+                            {/* Progress circle */}
+                            <div style={{ position:'relative', width:48, height:48, flexShrink:0 }}>
+                                <svg viewBox="0 0 36 36" style={{ width:48, height:48, transform:'rotate(-90deg)' }}>
+                                    <circle cx="18" cy="18" r="15" fill="none" stroke="#f0f0f0" strokeWidth="3"/>
+                                    <circle cx="18" cy="18" r="15" fill="none" stroke={color} strokeWidth="3"
+                                        strokeDasharray={`${pct * 0.942} 94.2`} strokeLinecap="round"/>
+                                </svg>
+                                <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', fontSize:'11px', fontWeight:'700', color }}>{pct}%</div>
+                            </div>
+                        </div>
+                        {/* Barra progresso */}
+                        <div style={{ marginTop:'10px', height:'4px', background:'#f0f0f0', borderRadius:'2px' }}>
+                            <div style={{ width:`${pct}%`, height:'100%', background:color, borderRadius:'2px', transition:'width 0.4s' }}/>
+                        </div>
+                        <div style={{ display:'flex', justifyContent:'space-between', fontSize:'11px', color:'#aaa', marginTop:'4px' }}>
+                            <span>Totale: {fmt(d.totalAmount)}</span>
+                            <span>Pagato: {fmt((d.payments||[]).reduce((s,p)=>s+p.amount,0))}</span>
+                        </div>
+                        {/* Azioni */}
+                        <div style={{ display:'flex', gap:'8px', marginTop:'10px' }}>
+                            <button onClick={() => { setPayingDebt(d); setPayAmount(''); setPayNote(''); }} style={{
+                                flex:2, padding:'8px', background:color, color:'white', border:'none',
+                                borderRadius:'8px', fontSize:'13px', fontWeight:'700', cursor:'pointer'
+                            }}>💳 Pagamento</button>
+                            <button onClick={() => onEdit(d)} style={{
+                                flex:1, padding:'8px', background:'#f5f5f5', border:'none',
+                                borderRadius:'8px', fontSize:'13px', cursor:'pointer'
+                            }}>✏️</button>
+                            <button onClick={() => onDelete(d.id)} style={{
+                                flex:1, padding:'8px', background:'#fff0f0', border:'none',
+                                borderRadius:'8px', fontSize:'13px', cursor:'pointer'
+                            }}>🗑️</button>
+                        </div>
+                    </div>
+                );
+            };
+
+            return (
+                <div style={{ padding:'16px', paddingBottom:'90px' }}>
+                    {/* Sommario */}
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'16px' }}>
+                        <div style={{ background:'#fff0f0', borderRadius:'12px', padding:'14px', textAlign:'center' }}>
+                            <div style={{ fontSize:'12px', color:'#888' }}>Devo</div>
+                            <div style={{ fontSize:'20px', fontWeight:'800', color:'#f44336' }}>{fmt(totalDevo)}</div>
+                        </div>
+                        <div style={{ background:'#e8f5e9', borderRadius:'12px', padding:'14px', textAlign:'center' }}>
+                            <div style={{ fontSize:'12px', color:'#888' }}>Mi devono</div>
+                            <div style={{ fontSize:'20px', fontWeight:'800', color:'#4CAF50' }}>{fmt(totalMiDevo)}</div>
+                        </div>
+                    </div>
+
+                    {/* Bottone aggiungi */}
+                    <button onClick={onAdd} style={{
+                        width:'100%', padding:'12px', marginBottom:'16px',
+                        background:'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                        color:'white', border:'none', borderRadius:'10px',
+                        fontSize:'15px', fontWeight:'700', cursor:'pointer'
+                    }}>+ Nuovo Debito / Credito</button>
+
+                    {/* Devo */}
+                    {devo.length > 0 && (<>
+                        <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'8px' }}>
+                            <span style={{ fontWeight:'700', color:'#f44336' }}>Devo</span>
+                            <span style={{ fontWeight:'700', color:'#f44336' }}>{fmt(totalDevo)}</span>
+                        </div>
+                        {devo.map(d => <DebtCard key={d.id} d={d} color="#f44336"/>)}
+                    </>)}
+
+                    {/* Mi devono */}
+                    {midevo.length > 0 && (<>
+                        <div style={{ display:'flex', justifyContent:'space-between', margin:'8px 0', marginTop: devo.length?'16px':'0' }}>
+                            <span style={{ fontWeight:'700', color:'#4CAF50' }}>Mi devono</span>
+                            <span style={{ fontWeight:'700', color:'#4CAF50' }}>{fmt(totalMiDevo)}</span>
+                        </div>
+                        {midevo.map(d => <DebtCard key={d.id} d={d} color="#4CAF50"/>)}
+                    </>)}
+
+                    {/* Completati */}
+                    {done.length > 0 && (<>
+                        <div style={{ marginTop:'16px', marginBottom:'8px', fontWeight:'700', color:'#888' }}>✅ Completati ({done.length})</div>
+                        {done.map(d => (
+                            <div key={d.id} style={{ background:'#f9f9f9', borderRadius:'10px', padding:'12px', marginBottom:'8px', opacity:0.6, display:'flex', alignItems:'center', gap:'10px' }}>
+                                <div style={{ fontSize:'20px' }}>{d.icon||'✅'}</div>
+                                <div style={{ flex:1 }}>
+                                    <div style={{ fontWeight:'600', fontSize:'14px' }}>{d.name}</div>
+                                    <div style={{ fontSize:'12px', color:'#888' }}>{d.type==='devo'?'Saldato':'Riscosso'} · {fmt(d.totalAmount)}</div>
+                                </div>
+                                <button onClick={() => onDelete(d.id)} style={{ background:'none', border:'none', color:'#ccc', cursor:'pointer', fontSize:'18px' }}>×</button>
+                            </div>
+                        ))}
+                    </>)}
+
+                    {debts.length === 0 && (
+                        <div style={{ textAlign:'center', padding:'40px 20px', color:'#aaa' }}>
+                            <div style={{ fontSize:'48px', marginBottom:'12px' }}>📋</div>
+                            <div style={{ fontWeight:'600' }}>Nessun debito registrato</div>
+                            <div style={{ fontSize:'13px', marginTop:'6px' }}>Aggiungi un debito o un credito con il bottone sopra</div>
+                        </div>
+                    )}
+
+                    {/* Payment modal */}
+                    {payingDebt && (
+                        <div className="modal" onClick={() => setPayingDebt(null)}>
+                            <div className="modal-content" onClick={e => e.stopPropagation()}>
+                                <div className="modal-header">
+                                    <h2 className="modal-title">💳 Registra Pagamento</h2>
+                                    <button className="close-btn" onClick={() => setPayingDebt(null)}>×</button>
+                                </div>
+                                <div style={{ padding:'16px' }}>
+                                    <div style={{ marginBottom:'12px', fontSize:'14px', color:'#666' }}>
+                                        <strong>{payingDebt.name}</strong> · Rimanente: {fmt(remaining(payingDebt))}
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Importo pagamento €</label>
+                                        <input className="form-input" type="number" step="0.01" min="0"
+                                            value={payAmount} onChange={e => setPayAmount(e.target.value)}
+                                            onFocus={e => e.target.select()}
+                                            placeholder={remaining(payingDebt).toFixed(2)}
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Nota (opzionale)</label>
+                                        <input className="form-input" type="text" value={payNote}
+                                            onChange={e => setPayNote(e.target.value)} placeholder="es. rata aprile" />
+                                    </div>
+                                    <button onClick={() => {
+                                        if (!payAmount || parseFloat(payAmount) <= 0) return;
+                                        onPayment(payingDebt.id, parseFloat(payAmount), payNote);
+                                        setPayingDebt(null);
+                                    }} className="submit-btn">
+                                        ✅ Registra
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // ============ DEBT MODAL (aggiungi/modifica) ============
+        function DebtModal({ debt, onSave, onClose }) {
+            const [name, setName]     = useState(debt?.name || '');
+            const [type, setType]     = useState(debt?.type || 'devo');
+            const [total, setTotal]   = useState(debt?.totalAmount || '');
+            const [note, setNote]     = useState(debt?.note || '');
+            const [icon, setIcon]     = useState(debt?.icon || '💰');
+            const [color, setColor]   = useState(debt?.color || (debt?.type==='mi_devono' ? '#4CAF50' : '#f44336'));
+
+            const ICONS = ['💰','🏦','🏠','🚗','💳','👤','📋','🎓','🏥','💊','🛒','✈️','🚐'];
+
+            const handleSave = () => {
+                if (!name.trim() || !total || parseFloat(total) <= 0) return;
+                onSave({
+                    ...(debt || {}),
+                    name: name.trim(), type, totalAmount: parseFloat(total),
+                    note: note.trim(), icon, color,
+                    payments: debt?.payments || [],
+                    completed: debt?.completed || false,
+                    startDate: debt?.startDate || new Date().toISOString()
+                });
+            };
+
+            return (
+                <div className="modal" onClick={onClose}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h2 className="modal-title">{debt ? '✏️ Modifica' : '➕ Nuovo'} Debito</h2>
+                            <button className="close-btn" onClick={onClose}>×</button>
+                        </div>
+                        <div style={{ padding:'16px' }}>
+                            {/* Tipo */}
+                            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px', marginBottom:'16px' }}>
+                                {[['devo','🔴 Devo','#f44336'],['mi_devono','🟢 Mi devono','#4CAF50']].map(([val,label,col]) => (
+                                    <button key={val} onClick={() => { setType(val); setColor(col); }} style={{
+                                        padding:'12px', border:`2px solid ${type===val?col:'#e0e0e0'}`,
+                                        borderRadius:'10px', background: type===val ? col+'22' : 'white',
+                                        fontWeight:'700', color: type===val ? col : '#888', cursor:'pointer', fontSize:'14px'
+                                    }}>{label}</button>
+                                ))}
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Nome / Creditore</label>
+                                <input className="form-input" type="text" value={name}
+                                    onChange={e => setName(e.target.value)} placeholder="es. Findomestic, Valentina..." />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Importo totale €</label>
+                                <input className="form-input" type="number" step="0.01" min="0"
+                                    value={total} onChange={e => setTotal(e.target.value)}
+                                    onFocus={e => e.target.select()} />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Icona</label>
+                                <div style={{ display:'flex', flexWrap:'wrap', gap:'8px', marginTop:'4px' }}>
+                                    {ICONS.map(ic => (
+                                        <button key={ic} onClick={() => setIcon(ic)} style={{
+                                            width:40, height:40, borderRadius:'50%', border: ic===icon ? '2px solid #667eea' : '1px solid #e0e0e0',
+                                            background: ic===icon ? '#f0f0ff' : 'white', fontSize:'20px', cursor:'pointer'
+                                        }}>{ic}</button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label">Note</label>
+                                <input className="form-input" type="text" value={note}
+                                    onChange={e => setNote(e.target.value)} placeholder="opzionale" />
+                            </div>
+                            <button onClick={handleSave} disabled={!name.trim() || !total} className="submit-btn"
+                                style={{ opacity: (!name.trim()||!total) ? 0.5 : 1 }}>
+                                {debt ? '✅ Salva modifiche' : '➕ Aggiungi'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
         // ============ LOGIN MODAL ============
         function LoginModal({ onClose }) {
             const [email, setEmail] = useState('');
@@ -6613,7 +6953,7 @@
                     }}>
                         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                             <div style={{ fontSize: '48px', marginBottom: '8px' }}>💰</div>
-                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker</h2>
+                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 8.0</h2>
                             <p style={{ margin: '6px 0 0', color: '#888', fontSize: '14px' }}>
                                 {isSignup ? 'Crea un account' : 'Accedi per sincronizzare i dati'}
                             </p>
