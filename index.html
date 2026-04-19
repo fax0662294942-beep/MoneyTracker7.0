@@ -403,7 +403,7 @@
         .fab {
             position: fixed;
             bottom: 85px;
-            right: 20px;
+            right: 160px;
             width: 62px;
             height: 62px;
             border-radius: 50%;
@@ -3432,7 +3432,7 @@
                             className="fab" 
                             onClick={() => setShowTransferModal(true)}
                             style={{ 
-                                right: '90px',
+                                right: '80px',
                                 background: 'linear-gradient(135deg, #FF9800 0%, #F57C00 100%)'
                             }}
                             title="Trasferimento tra Account"
@@ -3577,32 +3577,19 @@
                             <div className="nav-icon">📊</div>
                             <div className="nav-label">Categorie</div>
                         </button>
-
-                        {/* ── Bottone + centrale sollevato ── */}
-                        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'flex-end', paddingBottom:'6px', flex:1 }}>
-                            <button
-                                onClick={() => setShowModal(true)}
-                                style={{
-                                    width: 56, height: 56,
-                                    borderRadius: '50%',
-                                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                                    color: 'white', border: 'none',
-                                    fontSize: 28, fontWeight: '300',
-                                    boxShadow: '0 4px 16px rgba(102,126,234,0.5)',
-                                    cursor: 'pointer',
-                                    transform: 'translateY(-10px)',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    lineHeight: 1
-                                }}
-                            >+</button>
-                        </div>
-
                         <button 
                             className={`nav-item ${currentPage === 'home' ? 'active' : ''}`}
                             onClick={() => setCurrentPage('home')}
                         >
                             <div className="nav-icon">📝</div>
                             <div className="nav-label">Movimenti</div>
+                        </button>
+                        <button 
+                            className={`nav-item ${currentPage === 'budget' ? 'active' : ''}`}
+                            onClick={() => setCurrentPage('budget')}
+                        >
+                            <div className="nav-icon">💰</div>
+                            <div className="nav-label">Budget</div>
                         </button>
                         <button 
                             className={`nav-item ${currentPage === 'stats' ? 'active' : ''}`}
