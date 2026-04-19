@@ -2979,39 +2979,40 @@
                                 )}
                             </div>
                         </div>
-                        <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <select 
-                                value={selectedAccount}
-                                onChange={(e) => setSelectedAccount(e.target.value)}
-                                style={{
-                                    background: 'rgba(255,255,255,0.9)',
-                                    border: 'none',
-                                    padding: '8px 12px',
-                                    borderRadius: '8px',
-                                    fontSize: '14px',
-                                    fontWeight: '600',
-                                    cursor: 'pointer',
-                                    flex: 1
-                                }}
-                            >
-                                {getAccountsFilter().map(acc => (
-                                    <option key={acc.id} value={acc.id}>
-                                        {acc.icon} {acc.name}
-                                    </option>
-                                ))}
-                            </select>
-                            {/* ⚙️ spostato qui, non causa overflow */}
-                            <button
-                                onClick={() => setShowSettingsModal(true)}
-                                style={{
-                                    background: 'rgba(255,255,255,0.2)',
-                                    border: 'none', color: 'white',
-                                    padding: '8px 10px', borderRadius: '8px',
-                                    cursor: 'pointer', fontSize: '18px',
-                                    flexShrink: 0
-                                }}
-                            >⚙️</button>
-                        </div>
+                        <div style={{ marginTop: '10px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                                <select 
+                                    value={selectedAccount}
+                                    onChange={(e) => setSelectedAccount(e.target.value)}
+                                    style={{
+                                        background: 'rgba(255,255,255,0.9)',
+                                        border: 'none',
+                                        padding: '8px 12px',
+                                        borderRadius: '8px',
+                                        fontSize: '14px',
+                                        fontWeight: '600',
+                                        cursor: 'pointer',
+                                        flex: 1
+                                    }}
+                                >
+                                    {getAccountsFilter().map(acc => (
+                                        <option key={acc.id} value={acc.id}>
+                                            {acc.icon} {acc.name}
+                                        </option>
+                                    ))}
+                                </select>
+                                {/* ⚙️ accanto al selettore conti */}
+                                <button
+                                    onClick={() => setShowSettingsModal(true)}
+                                    style={{
+                                        background: 'rgba(255,255,255,0.2)',
+                                        border: 'none', color: 'white',
+                                        padding: '8px 10px', borderRadius: '8px',
+                                        cursor: 'pointer', fontSize: '18px',
+                                        flexShrink: 0
+                                    }}
+                                >⚙️</button>
+                            </div>
                             
                             {/* Selettore periodo: chip */}
                             <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'center', marginBottom: '6px' }}>
