@@ -1541,7 +1541,10 @@
                             } catch(e) {}
                         }
                         // IndexedDB vuoto e localStorage vuoto → prova Firestore
-                        if (window.FB_READY && userRef.current) {
+                        // (solo se NON abbiamo appena fatto un reset locale)
+                        const skipKey = 'skipFirestoreLoad_' + activeAccountId;
+                        const shouldSkip = sessionStorage.getItem(skipKey);
+                        if (!shouldSkip && window.FB_READY && userRef.current) {
                             try {
                                 const firestoreTxs = await window.loadTransactionsFromFirestore(
                                     activeAccountId, userRef.current.uid, sharedProfiles.current
@@ -6018,43 +6021,34 @@
                                         Reset transazioni
                                     </div>
                                     <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px' }}>
-                                        Cancella le transazioni di <strong>{getActiveAccount()?.name}</strong>. Categorie e impostazioni restano intatte.
+                                        Cancella le transazioni di <strong>{getActiveAccount()?.name}</strong>.
                                     </div>
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                                        {/* Solo locale */}
-                                        <button type="button" onClick={() => {
-                                            const nm = getActiveAccount()?.name || 'account';
-                                            if (window.confirm(`⚠️ Cancello le transazioni di "${nm}" solo su QUESTO dispositivo.\n\nI dati su Firestore (cloud) restano.\n\nProcedere?`)) {
-                                                window.deleteTransactionsFromDB(activeAccountId).then(() => {
-                                                    onClose(); window.location.reload();
-                                                });
-                                            }
+                                        <button type="button" onClick={async () => {
+                                            if (!window.confirm('⚠️ Cancello le transazioni su QUESTO dispositivo.\n\nAl prossimo avvio verranno riscaricate dal cloud.\n\nProcedere?')) return;
+                                            await window.deleteTransactionsFromDB(activeAccountId);
+                                            // Segna che il prossimo avvio NON deve scaricare da Firestore
+                                            sessionStorage.setItem('skipFirestoreLoad_' + activeAccountId, '1');
+                                            onClose(); window.location.reload();
                                         }} style={{ padding:'10px 6px', background:'#FF9800', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:'bold', fontSize:'12px', lineHeight:'1.3' }}>
                                             📱 Solo locale
                                         </button>
-                                        {/* Locale + Cloud — richiede reauth */}
                                         <button type="button" onClick={() => {
                                             const nm = getActiveAccount()?.name || 'account';
-                                            onReauth(
-                                                `Cancella transazioni di "${nm}" da Firestore`,
-                                                async () => {
-                                                    await window.deleteTransactionsFromDB(activeAccountId);
-                                                    const _uid = window.FB?.auth?.currentUser?.uid;
-                                                    if (window.FB_READY && _uid) {
-                                                        const { db, doc, setDoc, collection, getDocs } = window.FB;
-                                                        const isShared = false; // nel reset usa sempre percorso privato
-                                                        const basePath = isShared
-                                                            ? ['sharedProfiles', activeAccountId]
-                                                            : ['users', userRef.current.uid, 'profiles', activeAccountId];
-                                                        try {
-                                                            const chunksSnap = await getDocs(collection(db, ...basePath, 'chunks'));
-                                                            await Promise.all(chunksSnap.docs.map(d => window.FB.deleteDoc(d.ref)));
-                                                            await setDoc(doc(db, ...basePath), { chunkCount: 0, updatedAt: Date.now(), lastWriterUid: _uid }, { merge: true });
-                                                        } catch(e) { console.error('Firestore reset tx error', e); }
-                                                    }
-                                                    onClose(); window.location.reload();
+                                            onReauth(`Cancella transazioni di "${nm}" da Firestore`, async () => {
+                                                const uid = window.FB?.auth?.currentUser?.uid;
+                                                await window.deleteTransactionsFromDB(activeAccountId);
+                                                if (uid && window.FB_READY) {
+                                                    const { db, doc, setDoc, collection, getDocs, deleteDoc } = window.FB;
+                                                    try {
+                                                        const path = ['users', uid, 'profiles', activeAccountId];
+                                                        const snap = await getDocs(collection(db, ...path, 'chunks'));
+                                                        for (const d of snap.docs) await deleteDoc(d.ref);
+                                                        await setDoc(doc(db, ...path), { chunkCount: 0, updatedAt: Date.now() }, { merge: true });
+                                                    } catch(e) { alert('Errore Firestore: ' + e.message); return; }
                                                 }
-                                            );
+                                                onClose(); window.location.reload();
+                                            });
                                         }} style={{ padding:'10px 6px', background:'#f44336', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:'bold', fontSize:'12px', lineHeight:'1.3' }}>
                                             ☁️ Locale + Cloud
                                         </button>
@@ -6069,54 +6063,44 @@
                                         Reset completo
                                     </div>
                                     <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px' }}>
-                                        Cancella <strong>tutto</strong>: transazioni, categorie, conti e impostazioni. L'app torna come nuova.
+                                        Cancella <strong>tutto</strong>: transazioni, categorie, conti e impostazioni.
                                     </div>
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                                        {/* Solo locale */}
-                                        <button type="button" onClick={() => {
-                                            if (window.confirm(`⚠️ RESET COMPLETO — solo questo dispositivo.\n\nI dati cloud restano. Al prossimo avvio verranno riscaricati da Firestore.\n\nProcedere?`)) {
-                                                const allProfiles = JSON.parse(localStorage.getItem('moneyTrackerAccounts') || '[]');
-                                                const ids = [...new Set([...allProfiles.map(a => a.id), activeAccountId])];
-                                                Promise.all(ids.map(id => window.deleteTransactionsFromDB(id).catch(() => {}))).then(() => {
-                                                    localStorage.clear();
-                                                    window.location.reload();
-                                                });
-                                            }
+                                        <button type="button" onClick={async () => {
+                                            if (!window.confirm('⚠️ RESET COMPLETO locale.\n\nAl prossimo login i dati torneranno dal cloud.\n\nProcedere?')) return;
+                                            const ids = JSON.parse(localStorage.getItem('moneyTrackerAccounts') || '[]').map(a => a.id);
+                                            if (!ids.includes(activeAccountId)) ids.push(activeAccountId);
+                                            await Promise.all(ids.map(id => window.deleteTransactionsFromDB(id).catch(()=>{})));
+                                            localStorage.clear();
+                                            sessionStorage.clear();
+                                            window.location.reload();
                                         }} style={{ padding:'10px 6px', background:'#FF9800', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:'bold', fontSize:'12px', lineHeight:'1.3' }}>
                                             📱 Solo locale
                                         </button>
-                                        {/* Locale + Cloud — richiede reauth */}
                                         <button type="button" onClick={() => {
-                                            onReauth(
-                                                'Reset completo — cancella TUTTO da Firestore',
-                                                async () => {
-                                                    const allProfiles = JSON.parse(localStorage.getItem('moneyTrackerAccounts') || '[]');
-                                                    const ids = [...new Set([...allProfiles.map(a => a.id), activeAccountId])];
-                                                    await Promise.all(ids.map(id => window.deleteTransactionsFromDB(id).catch(() => {})));
-                                                    const _uid2 = window.FB?.auth?.currentUser?.uid;
-                                                    if (window.FB_READY && _uid2) {
-                                                        const { db, doc, setDoc, collection, getDocs } = window.FB;
-                                                        for (const pid of ids) {
-                                                            const isShared = false;
-                                                            const basePath = isShared
-                                                                ? ['sharedProfiles', pid]
-                                                                : ['users', userRef.current.uid, 'profiles', pid];
-                                                            try {
-                                                                const chunksSnap = await getDocs(collection(db, ...basePath, 'chunks'));
-                                                                await Promise.all(chunksSnap.docs.map(d => window.FB.deleteDoc(d.ref)));
-                                                                await setDoc(doc(db, ...basePath), { chunkCount: 0, updatedAt: Date.now() }, { merge: true });
-                                                            } catch(e) {}
-                                                        }
+                                            onReauth('Reset completo — cancella TUTTO da Firestore', async () => {
+                                                const uid = window.FB?.auth?.currentUser?.uid;
+                                                const ids = JSON.parse(localStorage.getItem('moneyTrackerAccounts') || '[]').map(a => a.id);
+                                                if (!ids.includes(activeAccountId)) ids.push(activeAccountId);
+                                                await Promise.all(ids.map(id => window.deleteTransactionsFromDB(id).catch(()=>{})));
+                                                if (uid && window.FB_READY) {
+                                                    const { db, doc, setDoc, collection, getDocs, deleteDoc } = window.FB;
+                                                    for (const pid of ids) {
                                                         try {
-                                                            await setDoc(doc(db, 'users', _uid2), {
-                                                                accounts: [], activeAccountId: null, updatedAt: Date.now()
-                                                            });
+                                                            const path = ['users', uid, 'profiles', pid];
+                                                            const snap = await getDocs(collection(db, ...path, 'chunks'));
+                                                            for (const d of snap.docs) await deleteDoc(d.ref);
+                                                            await setDoc(doc(db, ...path), { chunkCount: 0, updatedAt: Date.now() }, { merge: true });
                                                         } catch(e) {}
                                                     }
-                                                    localStorage.clear();
-                                                    window.location.reload();
+                                                    try {
+                                                        await setDoc(doc(db, 'users', uid), { accounts: [], activeAccountId: null, updatedAt: Date.now() });
+                                                    } catch(e) {}
                                                 }
-                                            );
+                                                localStorage.clear();
+                                                sessionStorage.clear();
+                                                window.location.reload();
+                                            });
                                         }} style={{ padding:'10px 6px', background:'#b71c1c', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:'bold', fontSize:'12px', lineHeight:'1.3' }}>
                                             ☁️ Locale + Cloud
                                         </button>
