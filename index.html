@@ -4526,7 +4526,10 @@
             const [note, setNote] = useState('');
             const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
             const [selectedTags, setSelectedTags] = useState([]);
-            const [showExtra, setShowExtra] = useState(false); // note/tag/data nascosti di default
+            const [showExtra, setShowExtra] = useState(false);
+            const [showNewSubcat, setShowNewSubcat] = useState(false); // form crea sottocategoria
+            const [newSubcatName, setNewSubcatName] = useState('');
+            const [newTagInput, setNewTagInput] = useState(''); // crea tag al volo
 
             const allAccounts = getAccountsFilter().filter(a => a.id !== 'all');
             const allCategories = getCategoriesFromStorage();
@@ -4575,6 +4578,35 @@
             };
 
             const tree = buildCategoryTree(allCategories[type] || []);
+
+            // Crea sottocategoria al volo
+            const addSubcatInline = () => {
+                if (!newSubcatName.trim() || !selectedParent) return;
+                const parentName = selectedParent.name.replace(/ > .*/,'');
+                const fullName = `${parentName} > ${newSubcatName.trim()}`;
+                const id = `custom_${type}_${Date.now()}`;
+                const updated = getCategoriesFromStorage();
+                updated[type] = [...(updated[type]||[]), {
+                    id, name: fullName,
+                    icon: selectedParent.icon,
+                    color: selectedParent.color
+                }];
+                saveCategoriestoStorage(updated);
+                setCategory(id);
+                setNewSubcatName('');
+                setShowNewSubcat(false);
+                setCategoriesVersion(v => v + 1);
+            };
+
+            // Crea tag al volo
+            const addTagInline = () => {
+                if (!newTagInput.trim()) return;
+                const tagId = getOrCreateTag(newTagInput.trim());
+                if (tagId && !selectedTags.includes(tagId)) {
+                    setSelectedTags(prev => [...prev, tagId]);
+                }
+                setNewTagInput('');
+            };
 
             // Quale padre è selezionato (dalla categoria selezionata)
             const selectedParentId = (() => {
@@ -4734,6 +4766,49 @@
                                             </button>
                                         );
                                     })}
+                                    {/* + aggiungi sottocategoria */}
+                                    {!showNewSubcat && (
+                                        <button type="button" onClick={() => setShowNewSubcat(true)}
+                                            style={{ flexShrink:0, padding:'5px 10px', borderRadius:'20px',
+                                                border:'2px dashed #ccc', background:'white', color:'#aaa',
+                                                cursor:'pointer', fontSize:'12px', whiteSpace:'nowrap' }}>
+                                            + Nuova
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Form crea nuova sottocategoria inline */}
+                            {showNewSubcat && selectedParent && (
+                                <div style={{ display:'flex', gap:'6px', marginBottom:'10px', alignItems:'center', paddingLeft:'8px' }}>
+                                    <input autoFocus type="text" value={newSubcatName}
+                                        onChange={e => setNewSubcatName(e.target.value)}
+                                        onKeyDown={e => { if(e.key==='Enter'){e.preventDefault();addSubcatInline();} if(e.key==='Escape') setShowNewSubcat(false); }}
+                                        placeholder={`Nuova sotto "${selectedParent.name.replace(/ > .*/,'')}"`}
+                                        style={{ flex:1, padding:'6px 10px', borderRadius:'20px', border:'2px solid ' + selectedParent.color,
+                                            fontSize:'13px', outline:'none' }}
+                                    />
+                                    <button type="button" onClick={addSubcatInline}
+                                        style={{ padding:'6px 12px', borderRadius:'20px', border:'none',
+                                            background: selectedParent.color, color:'white', fontWeight:'700', cursor:'pointer', fontSize:'13px' }}>
+                                        ✓
+                                    </button>
+                                    <button type="button" onClick={() => { setShowNewSubcat(false); setNewSubcatName(''); }}
+                                        style={{ padding:'6px 10px', borderRadius:'20px', border:'1px solid #ddd',
+                                            background:'white', color:'#aaa', cursor:'pointer', fontSize:'13px' }}>
+                                        ✕
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Se padre senza figli ancora: mostra + Nuova sottocategoria */}
+                            {selectedParent && subcats.length === 0 && !showNewSubcat && (
+                                <div style={{ paddingLeft:'8px', marginBottom:'8px' }}>
+                                    <button type="button" onClick={() => setShowNewSubcat(true)}
+                                        style={{ padding:'5px 12px', borderRadius:'20px', border:'2px dashed #ccc',
+                                            background:'white', color:'#aaa', cursor:'pointer', fontSize:'12px' }}>
+                                        + Aggiungi sottocategoria
+                                    </button>
                                 </div>
                             )}
 
@@ -4757,21 +4832,42 @@
                             </div>
 
                             {/* Tag — solo se aperti */}
-                            {showExtra && allTags.length > 0 && (
-                                <div style={{ display:'flex', flexWrap:'wrap', gap:'6px', marginBottom:'12px' }}>
-                                    {allTags.map(tag => (
-                                        <button key={tag.id} type="button"
-                                            onClick={() => setSelectedTags(prev =>
-                                                prev.includes(tag.id) ? prev.filter(t => t !== tag.id) : [...prev, tag.id]
-                                            )}
-                                            style={{ padding:'4px 10px', borderRadius:'20px',
-                                                border:'2px solid ' + tag.color,
-                                                background: selectedTags.includes(tag.id) ? tag.color : 'transparent',
-                                                color: selectedTags.includes(tag.id) ? 'white' : tag.color,
-                                                fontSize:'12px', cursor:'pointer', fontWeight:'bold' }}>
-                                            # {tag.name}
+                            {showExtra && (
+                                <div style={{ marginBottom:'12px' }}>
+                                    {allTags.length > 0 && (
+                                        <div style={{ display:'flex', flexWrap:'wrap', gap:'6px', marginBottom:'8px' }}>
+                                            {allTags.map(tag => (
+                                                <button key={tag.id} type="button"
+                                                    onClick={() => setSelectedTags(prev =>
+                                                        prev.includes(tag.id) ? prev.filter(t => t !== tag.id) : [...prev, tag.id]
+                                                    )}
+                                                    style={{ padding:'4px 10px', borderRadius:'20px',
+                                                        border:'2px solid ' + tag.color,
+                                                        background: selectedTags.includes(tag.id) ? tag.color : 'transparent',
+                                                        color: selectedTags.includes(tag.id) ? 'white' : tag.color,
+                                                        fontSize:'12px', cursor:'pointer', fontWeight:'bold' }}>
+                                                    # {tag.name}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {/* Crea tag al volo */}
+                                    <div style={{ display:'flex', gap:'6px' }}>
+                                        <input type="text" value={newTagInput}
+                                            onChange={e => setNewTagInput(e.target.value)}
+                                            onKeyDown={e => { if(e.key==='Enter'){e.preventDefault(); addTagInline();} }}
+                                            placeholder="# Nuovo tag..."
+                                            style={{ flex:1, padding:'6px 10px', borderRadius:'20px',
+                                                border:'1px solid #e0e0e0', fontSize:'13px', outline:'none' }}
+                                        />
+                                        <button type="button" onClick={addTagInline} disabled={!newTagInput.trim()}
+                                            style={{ padding:'6px 12px', borderRadius:'20px', border:'none',
+                                                background: newTagInput.trim() ? '#667eea' : '#e0e0e0',
+                                                color: newTagInput.trim() ? 'white' : '#aaa',
+                                                fontWeight:'700', cursor:'pointer', fontSize:'13px' }}>
+                                            + Tag
                                         </button>
-                                    ))}
+                                    </div>
                                 </div>
                             )}
 
@@ -6511,6 +6607,7 @@
             const [newName, setNewName] = useState('');
             const [newIcon, setNewIcon] = useState('📦');
             const [newColor, setNewColor] = useState('#B0BEC5');
+            const [newParent, setNewParent] = useState(''); // '' = nessun padre
             const [showAddForm, setShowAddForm] = useState(false);
 
             const save = (updated) => {
@@ -6530,12 +6627,19 @@
             const addCategory = () => {
                 if (!newName.trim()) return;
                 const id = `custom_${tab}_${Date.now()}`;
+                // Se ha un padre, il nome diventa "Padre > Figlio"
+                const parentCat = cats[tab].find(c => c.id === newParent);
+                const fullName = parentCat
+                    ? `${parentCat.name.replace(/ > .*/,'')} > ${newName.trim()}`
+                    : newName.trim();
+                const icon = newIcon === '📦' && parentCat ? parentCat.icon : newIcon;
+                const color = newColor === '#B0BEC5' && parentCat ? parentCat.color : newColor;
                 const updated = {
                     ...cats,
-                    [tab]: [...cats[tab], { id, name: newName.trim(), icon: newIcon, color: newColor }]
+                    [tab]: [...cats[tab], { id, name: fullName, icon, color }]
                 };
                 save(updated);
-                setNewName(''); setShowAddForm(false);
+                setNewName(''); setNewParent(''); setShowAddForm(false);
             };
 
             const updateCat = (id, field, value) => {
@@ -6622,11 +6726,25 @@
                         {showAddForm && (
                             <div style={{ marginTop: '15px', padding: '15px', background: '#f8f9ff', borderRadius: '10px', border: '1px solid #667eea' }}>
                                 <div style={{ fontWeight: 'bold', marginBottom: '10px', color: '#667eea' }}>➕ Nuova Categoria</div>
+
+                                {/* Selezione padre opzionale */}
+                                <div style={{ marginBottom: '10px' }}>
+                                    <div style={{ fontSize: '12px', color: '#666', marginBottom: '5px' }}>Categoria padre (opzionale):</div>
+                                    <select value={newParent} onChange={e => setNewParent(e.target.value)}
+                                        style={{ width:'100%', padding:'8px', borderRadius:'6px', border:'1px solid #ccc', fontSize:'14px' }}>
+                                        <option value="">— Nessuno (categoria radice) —</option>
+                                        {(cats[tab]||[]).filter(c => !c.name.includes(' > ')).map(c => (
+                                            <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
                                 <input 
-                                    placeholder="Nome categoria"
+                                    placeholder={newParent ? "Nome sottocategoria" : "Nome categoria"}
                                     value={newName}
                                     onChange={e => setNewName(e.target.value)}
-                                    style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', marginBottom: '10px' }}
+                                    onKeyDown={e => e.key === 'Enter' && addCategory()}
+                                    style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', marginBottom: '10px', boxSizing:'border-box' }}
                                 />
                                 <div style={{ marginBottom: '10px' }}>
                                     <div style={{ fontSize: '12px', color: '#666', marginBottom: '5px' }}>Seleziona emoji:</div>
