@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#4CAF50">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>MoneyTracker 9.0 - Gestione Spese</title>
+    <title>MoneyTracker 9.1 - Gestione Spese</title>
     <link rel="manifest" href="manifest.json">
     <script>
         // Registra Service Worker per funzionamento offline
@@ -452,7 +452,10 @@
             to { transform: translateY(0); }
         }
         
-        @keyframes menuAppear {
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to   { transform: rotate(360deg); }
+        }
             from { 
                 opacity: 0;
                 transform: translateX(-50%) scale(0.9);
@@ -1151,8 +1154,8 @@
         const { useState, useEffect, useRef } = React;
 
         // ============ VERSIONE APP ============
-        const APP_VERSION = '9.0';
-        const APP_BUILD_DATE = '20/04/2026 08:34';
+        const APP_VERSION = '9.1';
+        const APP_BUILD_DATE = '20/04/2026 10:32';
 
 
 
@@ -1343,7 +1346,8 @@
             const [debts, setDebts] = useState([]);
             const [accountSubTab, setAccountSubTab] = useState('conti'); // 'conti' | 'debiti'
             const [showDebtModal, setShowDebtModal] = useState(false);   // false | debt object (edit) | 'new'
-            const [reauthAction, setReauthAction] = useState(null); // null | { label, onConfirmed } // trigger re-render
+            const [reauthAction, setReauthAction] = useState(null);
+            const [syncStatus, setSyncStatus] = useState('idle'); // idle|syncing|synced|error
             
             // ============ DATI ACCOUNT CORRENTE ============
             const [transactions, setTransactions] = useState([]);
@@ -1431,7 +1435,6 @@
             // Inizializza dati da Firestore al login
             const initFirestoreData = async (firebaseUser) => {
                 const { db, doc, setDoc, getDoc } = window.FB;
-                // Aggiorna sharedProfiles ref basandosi sugli account con shared:true
                 const localAccounts = localStorage.getItem('moneyTrackerAccounts');
                 if (localAccounts) {
                     const accs = JSON.parse(localAccounts);
@@ -1441,7 +1444,6 @@
                     const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
                     if (userDoc.exists()) {
                         const data = userDoc.data();
-                        // Aggiorna accounts da Firestore se presenti
                         if (data.accounts && data.accounts.length > 0) {
                             setAccounts(data.accounts);
                             sharedProfiles.current = data.accounts.filter(a => a.shared).map(a => a.id);
@@ -1450,6 +1452,33 @@
                             window._activeProfileId = activeId;
                             localStorage.setItem('moneyTrackerAccounts', JSON.stringify(data.accounts));
                             localStorage.setItem('moneyTrackerActiveAccount', activeId);
+
+                            // ── CARICA TRANSAZIONI DA FIRESTORE SUBITO ──
+                            // Non aspettare l'useEffect — evita race condition con userRef
+                            if (activeId) {
+                                setSyncStatus('syncing');
+                                try {
+                                    const localTxs = await window.loadTransactionsFromDB(activeId);
+                                    if (localTxs.length === 0) {
+                                        // Dispositivo nuovo/pulito: scarica da Firestore
+                                        const firestoreTxs = await window.loadTransactionsFromFirestore(
+                                            activeId, firebaseUser.uid,
+                                            data.accounts.filter(a => a.shared).map(a => a.id)
+                                        );
+                                        if (firestoreTxs && firestoreTxs.length > 0) {
+                                            await window.saveTransactionsToDB(activeId, firestoreTxs);
+                                            isLoadingTransactions.current = false;
+                                            setTransactions(firestoreTxs);
+                                        }
+                                    }
+                                    // Carica anche budgets/settings da Firestore se locali vuoti
+                                    if (data.debts) setDebts(data.debts);
+                                    setSyncStatus('synced');
+                                } catch(e) {
+                                    console.error('Firestore load on login error:', e);
+                                    setSyncStatus('error');
+                                }
+                            }
                         }
                     } else {
                         // Primo login: push dati locali → Firestore
@@ -1464,12 +1493,12 @@
                             });
                         }
                     }
-                    // Assicura che l'utente sia registrato come member in tutti i profili condivisi
                     for (const profileId of sharedProfiles.current) {
                         await window.ensureSharedProfileMembers(profileId, firebaseUser.uid);
                     }
                 } catch(e) {
                     console.error('initFirestoreData error:', e);
+                    setSyncStatus('error');
                 }
             };
 
@@ -1913,12 +1942,18 @@
 
                 // 3. Sync immediato su Firestore (non in background)
                 if (window.FB_READY && userRef.current) {
+                    setSyncStatus('syncing');
                     try {
                         await window.syncTransactionsToFirestore(
                             activeAccountId, newTransactions,
                             userRef.current.uid, sharedProfiles.current
                         );
-                    } catch(e) { console.error('Firestore immediate sync error:', e); }
+                        setSyncStatus('synced');
+                        setTimeout(() => setSyncStatus('idle'), 3000);
+                    } catch(e) {
+                        console.error('Firestore immediate sync error:', e);
+                        setSyncStatus('error');
+                    }
                 }
             };
 
@@ -2929,7 +2964,7 @@
                             alignItems: 'center', justifyContent: 'center', color: 'white'
                         }}>
                             <div style={{ fontSize: '48px', marginBottom: '16px' }}>💰</div>
-                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 9.0</div>
+                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 9.1</div>
                             <div style={{ fontSize: '13px', marginTop: '8px', opacity: 0.7 }}>Caricamento...</div>
                         </div>
                     )}
@@ -3035,6 +3070,15 @@
                                 )}
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                {/* Indicatore sync */}
+                                {user && syncStatus !== 'idle' && (
+                                    <div title={syncStatus === 'syncing' ? 'Salvataggio...' : syncStatus === 'synced' ? 'Salvato ✓' : 'Errore sync'}
+                                        style={{ fontSize: '16px', lineHeight: 1 }}>
+                                        {syncStatus === 'syncing' && <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>🔄</span>}
+                                        {syncStatus === 'synced'  && <span>☁️✅</span>}
+                                        {syncStatus === 'error'   && <span title="Errore sync — riprova">⚠️</span>}
+                                    </div>
+                                )}
                                 {/* Avatar utente / login */}
                                 {user ? (
                                     <button
@@ -7540,7 +7584,7 @@
                     }}>
                         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                             <div style={{ fontSize: '48px', marginBottom: '8px' }}>💰</div>
-                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 9.0</h2>
+                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 9.1</h2>
                             <p style={{ margin: '6px 0 0', color: '#888', fontSize: '14px' }}>
                                 {isSignup ? 'Crea un account' : 'Accedi per sincronizzare i dati'}
                             </p>
