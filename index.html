@@ -4519,21 +4519,25 @@
         }
 
         function AddTransactionModal({ onClose, onAdd, preselectedCategory, preselectedAccount }) {
+            // Carica conti PRIMA degli useState per avere il default corretto
+            const allAccounts = getAccountsFilter().filter(a => a.id !== 'all');
+            const allCategories = getCategoriesFromStorage();
+            const allTags = getTagsFromStorage();
+
+            // Default account: quello preselezionato, oppure il primo disponibile, oppure 'cash'
+            const _defaultAccount = preselectedAccount || allAccounts[0]?.id || 'cash';
+
             const [type, setType] = useState('expense');
             const [amount, setAmount] = useState('');
             const [category, setCategory] = useState(preselectedCategory || '');
-            const [account, setAccount] = useState(preselectedAccount || 'cash');
+            const [account, setAccount] = useState(_defaultAccount);
             const [note, setNote] = useState('');
             const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
             const [selectedTags, setSelectedTags] = useState([]);
             const [showExtra, setShowExtra] = useState(false);
-            const [showNewSubcat, setShowNewSubcat] = useState(false); // form crea sottocategoria
+            const [showNewSubcat, setShowNewSubcat] = useState(false);
             const [newSubcatName, setNewSubcatName] = useState('');
-            const [newTagInput, setNewTagInput] = useState(''); // crea tag al volo
-
-            const allAccounts = getAccountsFilter().filter(a => a.id !== 'all');
-            const allCategories = getCategoriesFromStorage();
-            const allTags = getTagsFromStorage();
+            const [newTagInput, setNewTagInput] = useState('');
 
             // ── Logica padre/figlio ──
             // Categorie con " > " nel nome → "Padre > Figlio"
