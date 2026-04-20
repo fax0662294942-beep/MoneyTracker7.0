@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#4CAF50">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>MoneyTracker 8.20.6 - Gestione Spese</title>
+    <title>MoneyTracker 9.0 - Gestione Spese</title>
     <link rel="manifest" href="manifest.json">
     <script>
         // Registra Service Worker per funzionamento offline
@@ -1151,8 +1151,8 @@
         const { useState, useEffect, useRef } = React;
 
         // ============ VERSIONE APP ============
-        const APP_VERSION = '8.20.6';
-        const APP_BUILD_DATE = '20/04/2026 05:11';
+        const APP_VERSION = '9.0';
+        const APP_BUILD_DATE = '20/04/2026 08:34';
 
 
 
@@ -1900,19 +1900,56 @@
 		        return incomes;
 		    };
 
-            const addTransaction = (transaction) => {
-                setTransactions([transaction, ...transactions]);
+            const addTransaction = async (transaction) => {
+                // 1. Aggiorna UI subito
+                const newTransactions = [transaction, ...transactions];
+                setTransactions(newTransactions);
                 setShowModal(false);
-            };
 
-            const deleteTransaction = (id) => {
-                if (window.confirm('Sei sicuro di voler eliminare questa transazione?')) {
-                    setTransactions(transactions.filter(t => t.id !== id));
+                // 2. Salva su IndexedDB locale
+                try {
+                    await window.saveTransactionsToDB(activeAccountId, newTransactions);
+                } catch(e) { console.error('IndexedDB save error:', e); }
+
+                // 3. Sync immediato su Firestore (non in background)
+                if (window.FB_READY && userRef.current) {
+                    try {
+                        await window.syncTransactionsToFirestore(
+                            activeAccountId, newTransactions,
+                            userRef.current.uid, sharedProfiles.current
+                        );
+                    } catch(e) { console.error('Firestore immediate sync error:', e); }
                 }
             };
 
-            const editTransaction = (updated) => {
-                setTransactions(prev => prev.map(t => t.id === updated.id ? updated : t));
+            const deleteTransaction = async (id) => {
+                if (window.confirm('Sei sicuro di voler eliminare questa transazione?')) {
+                    const updated = transactions.filter(t => t.id !== id);
+                    setTransactions(updated);
+                    try { await window.saveTransactionsToDB(activeAccountId, updated); } catch(e) {}
+                    if (window.FB_READY && userRef.current) {
+                        try {
+                            await window.syncTransactionsToFirestore(
+                                activeAccountId, updated,
+                                userRef.current.uid, sharedProfiles.current
+                            );
+                        } catch(e) {}
+                    }
+                }
+            };
+
+            const editTransaction = async (updated) => {
+                const newTransactions = transactions.map(t => t.id === updated.id ? updated : t);
+                setTransactions(newTransactions);
+                try { await window.saveTransactionsToDB(activeAccountId, newTransactions); } catch(e) {}
+                if (window.FB_READY && userRef.current) {
+                    try {
+                        await window.syncTransactionsToFirestore(
+                            activeAccountId, newTransactions,
+                            userRef.current.uid, sharedProfiles.current
+                        );
+                    } catch(e) {}
+                }
             };
 
             const setBudget = (category, amount) => {
@@ -2892,7 +2929,7 @@
                             alignItems: 'center', justifyContent: 'center', color: 'white'
                         }}>
                             <div style={{ fontSize: '48px', marginBottom: '16px' }}>💰</div>
-                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 8.20.6</div>
+                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 9.0</div>
                             <div style={{ fontSize: '13px', marginTop: '8px', opacity: 0.7 }}>Caricamento...</div>
                         </div>
                     )}
@@ -7503,7 +7540,7 @@
                     }}>
                         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                             <div style={{ fontSize: '48px', marginBottom: '8px' }}>💰</div>
-                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 8.20.6</h2>
+                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 9.0</h2>
                             <p style={{ margin: '6px 0 0', color: '#888', fontSize: '14px' }}>
                                 {isSignup ? 'Crea un account' : 'Accedi per sincronizzare i dati'}
                             </p>

@@ -1,85 +1,48 @@
-const CACHE_NAME = 'moneytracker-v8205';
-
-const CDN_LIBS = [
-  'https://unpkg.com/react@18/umd/react.production.min.js',
-  'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
-  'https://unpkg.com/@babel/standalone/babel.min.js',
-  'https://cdn.jsdelivr.net/npm/chart.js'
-];
-
-const LOCAL_ASSETS = [
-  '/MoneyTracker7.0/',
-  '/MoneyTracker7.0/index.html',
-  '/MoneyTracker7.0/manifest.json'
-];
+const CACHE_NAME = 'moneytracker-v900';
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(async (cache) => {
-      // Cacha assets locali
-      await cache.addAll(LOCAL_ASSETS).catch(err => console.warn('Local cache parziale:', err));
-      
-      // Cacha librerie CDN (una per una per non fallire tutto se una manca)
-      for (const url of CDN_LIBS) {
-        try {
-          const response = await fetch(url, { mode: 'cors' });
-          if (response.ok) {
-            await cache.put(url, response);
-            console.log('Cachato:', url);
-          }
-        } catch (err) {
-          console.warn('Non cachato (continuo):', url, err.message);
-        }
-      }
-    })
-  );
+  // Attiva subito senza aspettare che le vecchie tab vengano chiuse
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => {
-      return Promise.all(
-        keys.filter((key) => key !== CACHE_NAME).map((key) => {
-          console.log('Elimino cache vecchia:', key);
-          return caches.delete(key);
-        })
-      );
-    })
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+    )
   );
   self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
-
   const url = event.request.url;
   const isHTML = event.request.mode === 'navigate' || url.endsWith('.html');
+  const isCDN  = url.includes('unpkg.com') || url.includes('jsdelivr') || url.includes('cdnjs') || url.includes('gstatic') || url.includes('firebasejs');
 
   if (isHTML) {
-    // Network first per HTML: aggiornamenti immediati
+    // HTML: sempre dal network, fallback cache
     event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          return response;
-        })
-        .catch(() => caches.match(event.request))
+      fetch(event.request).then(res => {
+        const clone = res.clone();
+        caches.open(CACHE_NAME).then(c => c.put(event.request, clone));
+        return res;
+      }).catch(() => caches.match(event.request))
     );
-  } else {
-    // Cache first per tutto il resto (CDN libs, icone, manifest)
+  } else if (isCDN) {
+    // Librerie CDN: cache-first (non cambiano)
     event.respondWith(
-      caches.match(event.request).then((cached) => {
+      caches.match(event.request).then(cached => {
         if (cached) return cached;
-        return fetch(event.request).then((response) => {
-          if (response && response.status === 200) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        return fetch(event.request).then(res => {
+          if (res.ok) {
+            const clone = res.clone();
+            caches.open(CACHE_NAME).then(c => c.put(event.request, clone));
           }
-          return response;
-        }).catch(() => undefined);
+          return res;
+        });
       })
     );
   }
+  // Tutto il resto: pass-through senza cache
 });
