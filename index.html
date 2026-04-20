@@ -1757,13 +1757,13 @@
                 });
             };
 
-            // Totali basati sul periodo selezionato (non su tutte le transazioni)
+            // Totali basati sul periodo selezionato (esclusi trasferimenti)
             const periodTransactions = getCurrentMonthTransactions();
             const totalIncome = periodTransactions
-                .filter(t => t.type === 'income')
+                .filter(t => t.type === 'income' && !t.isTransfer)
                 .reduce((acc, t) => acc + t.amount, 0);
             const totalExpense = periodTransactions
-                .filter(t => t.type === 'expense')
+                .filter(t => t.type === 'expense' && !t.isTransfer)
                 .reduce((acc, t) => acc + t.amount, 0);
             const balance = totalIncome - totalExpense;
 
@@ -1871,7 +1871,7 @@
                 const expenses = {};
                 
                 monthlyTransactions
-                    .filter(t => t.type === 'expense')
+                    .filter(t => t.type === 'expense' && !t.isTransfer)
                     .forEach(t => {
                         if (!expenses[t.category]) {
                             expenses[t.category] = 0;
@@ -1886,7 +1886,7 @@
 		        const monthlyTransactions = getCurrentMonthTransactions();
 		        const incomes = {};
 		        monthlyTransactions
-		            .filter(t => t.type === 'income')
+		            .filter(t => t.type === 'income' && !t.isTransfer)
 		            .forEach(t => {
 		                if (!incomes[t.category]) incomes[t.category] = 0;
 		                incomes[t.category] += t.amount;
