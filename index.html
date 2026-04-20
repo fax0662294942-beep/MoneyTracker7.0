@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#4CAF50">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>MoneyTracker 9.1 - Gestione Spese</title>
+    <title>MoneyTracker 9.2 - Gestione Spese</title>
     <link rel="manifest" href="manifest.json">
     <script>
         // Registra Service Worker per funzionamento offline
@@ -1048,9 +1048,19 @@
             if (!window.FB_READY || !uid) return;
             const { db, doc, setDoc } = window.FB;
             try {
+                // Salva anche i wallet (conti bancari) per ogni profilo
+                const walletsByProfile = {};
+                accounts.forEach(function(acc) {
+                    const key = 'customTransactionAccounts_' + acc.id;
+                    const stored = localStorage.getItem(key);
+                    if (stored) {
+                        try { walletsByProfile[acc.id] = JSON.parse(stored); } catch(e) {}
+                    }
+                });
                 await setDoc(doc(db, 'users', uid), {
                     accounts: accounts,
                     activeAccountId: activeAccountId,
+                    walletsByProfile: walletsByProfile,
                     updatedAt: Date.now()
                 }, { merge: true });
             } catch(e) {
@@ -1154,8 +1164,8 @@
         const { useState, useEffect, useRef } = React;
 
         // ============ VERSIONE APP ============
-        const APP_VERSION = '9.1';
-        const APP_BUILD_DATE = '20/04/2026 10:32';
+        const APP_VERSION = '9.2';
+        const APP_BUILD_DATE = '20/04/2026 10:41';
 
 
 
@@ -1278,6 +1288,15 @@
                 ? `customTransactionAccounts_${window._activeProfileId}`
                 : 'customTransactionAccounts';
             localStorage.setItem(profileKey, JSON.stringify(accs));
+            // Sync wallet su Firestore in background
+            if (window.FB_READY && window.FB.auth.currentUser) {
+                const uid = window.FB.auth.currentUser.uid;
+                const allProfilesRaw = localStorage.getItem('moneyTrackerAccounts');
+                const allProfiles = allProfilesRaw ? JSON.parse(allProfilesRaw) : [];
+                window.syncAccountsToFirestore(uid, allProfiles,
+                    localStorage.getItem('moneyTrackerActiveAccount')
+                ).catch(e => console.error('wallet sync error:', e));
+            }
         };
 
         // ============ TAG SYSTEM ============
@@ -1452,6 +1471,19 @@
                             window._activeProfileId = activeId;
                             localStorage.setItem('moneyTrackerAccounts', JSON.stringify(data.accounts));
                             localStorage.setItem('moneyTrackerActiveAccount', activeId);
+
+                            // ── RIPRISTINA WALLET (conti bancari) ──
+                            if (data.walletsByProfile) {
+                                Object.keys(data.walletsByProfile).forEach(profileId => {
+                                    const wallets = data.walletsByProfile[profileId];
+                                    if (wallets && wallets.length > 0) {
+                                        const key = 'customTransactionAccounts_' + profileId;
+                                        if (!localStorage.getItem(key)) {
+                                            localStorage.setItem(key, JSON.stringify(wallets));
+                                        }
+                                    }
+                                });
+                            }
 
                             // ── CARICA TRANSAZIONI DA FIRESTORE SUBITO ──
                             // Non aspettare l'useEffect — evita race condition con userRef
@@ -2964,7 +2996,7 @@
                             alignItems: 'center', justifyContent: 'center', color: 'white'
                         }}>
                             <div style={{ fontSize: '48px', marginBottom: '16px' }}>💰</div>
-                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 9.1</div>
+                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 9.2</div>
                             <div style={{ fontSize: '13px', marginTop: '8px', opacity: 0.7 }}>Caricamento...</div>
                         </div>
                     )}
@@ -7584,7 +7616,7 @@
                     }}>
                         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                             <div style={{ fontSize: '48px', marginBottom: '8px' }}>💰</div>
-                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 9.1</h2>
+                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 9.2</h2>
                             <p style={{ margin: '6px 0 0', color: '#888', fontSize: '14px' }}>
                                 {isSignup ? 'Crea un account' : 'Accedi per sincronizzare i dati'}
                             </p>
