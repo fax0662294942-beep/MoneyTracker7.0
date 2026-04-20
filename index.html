@@ -30,9 +30,7 @@
         import {
             getAuth, GoogleAuthProvider, signInWithPopup,
             signInWithEmailAndPassword, createUserWithEmailAndPassword,
-            onAuthStateChanged, signOut,
-            reauthenticateWithCredential, reauthenticateWithPopup,
-            EmailAuthProvider
+            onAuthStateChanged, signOut
         } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
         import {
             getFirestore, enableIndexedDbPersistence,
@@ -65,7 +63,6 @@
             GoogleAuthProvider, signInWithPopup,
             signInWithEmailAndPassword, createUserWithEmailAndPassword,
             onAuthStateChanged, signOut,
-            reauthenticateWithCredential, reauthenticateWithPopup, EmailAuthProvider,
             doc, setDoc, getDoc, collection, getDocs, addDoc, deleteDoc,
             onSnapshot, query, where, serverTimestamp
         };
@@ -7049,9 +7046,9 @@
         // Richiede riautenticazione prima di operazioni distruttive
         // onConfirmed() viene chiamato solo se l'auth ha successo
         function ReauthModal({ onConfirmed, onClose, actionLabel }) {
-            const [password, setPassword] = useState('');
-            const [loading, setLoading] = useState(false);
-            const [error, setError] = useState('');
+            const [password, setPassword] = React.useState('');
+            const [loading, setLoading] = React.useState(false);
+            const [error, setError] = React.useState('');
 
             const user = window.FB?.auth?.currentUser;
             const isGoogle = user?.providerData?.[0]?.providerId === 'google.com';
@@ -7059,12 +7056,14 @@
             const handleConfirm = async () => {
                 setLoading(true); setError('');
                 try {
+                    // Import dinamico — non nel modulo principale per non bloccarlo
+                    const authModule = await import('https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js');
                     if (isGoogle) {
-                        const provider = new window.FB.GoogleAuthProvider();
-                        await window.FB.reauthenticateWithPopup(user, provider);
+                        const provider = new authModule.GoogleAuthProvider();
+                        await authModule.reauthenticateWithPopup(user, provider);
                     } else {
-                        const cred = window.FB.EmailAuthProvider.credential(user.email, password);
-                        await window.FB.reauthenticateWithCredential(user, cred);
+                        const cred = authModule.EmailAuthProvider.credential(user.email, password);
+                        await authModule.reauthenticateWithCredential(user, cred);
                     }
                     onConfirmed();
                 } catch(e) {
@@ -7074,7 +7073,7 @@
                         'auth/too-many-requests': 'Troppi tentativi, riprova tra poco',
                         'auth/user-mismatch': 'Account non corrispondente'
                     };
-                    setError(msgs[e.code] || 'Errore di autenticazione');
+                    setError(msgs[e.code] || 'Errore: ' + e.message);
                 } finally { setLoading(false); }
             };
 
