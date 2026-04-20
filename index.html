@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#4CAF50">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>MoneyTracker 9.2 - Gestione Spese</title>
+    <title>MoneyTracker 9.3 - Gestione Spese</title>
     <link rel="manifest" href="manifest.json">
     <script>
         // Registra Service Worker per funzionamento offline
@@ -1164,8 +1164,8 @@
         const { useState, useEffect, useRef } = React;
 
         // ============ VERSIONE APP ============
-        const APP_VERSION = '9.2';
-        const APP_BUILD_DATE = '20/04/2026 11:13';
+        const APP_VERSION = '9.3';
+        const APP_BUILD_DATE = '20/04/2026 11:45';
 
 
 
@@ -1358,6 +1358,7 @@
             // ============ ACCOUNT MULTIPLI ============
             const [accounts, setAccounts] = useState([]);
             const isLoadingTransactions = useRef(false);
+            const transactionsRef = useRef([]); // sempre aggiornato, evita stale closure
             const [activeAccountId, setActiveAccountId] = useState(null);
             const [showAccountModal, setShowAccountModal] = useState(false);
             const [showTransferModal, setShowTransferModal] = useState(false);
@@ -1649,18 +1650,16 @@
 
             // ============ SALVA DATI ACCOUNT ATTIVO ============
             useEffect(() => {
+                // Mantieni ref aggiornato (evita stale closure in addTransaction)
+                transactionsRef.current = transactions;
+
                 if (!activeAccountId || transactions.length === 0) return;
                 if (isLoadingTransactions.current) return;
-                // Salva su IndexedDB (locale)
+                // Salva solo su IndexedDB locale — Firestore viene aggiornato
+                // in modo esplicito da addTransaction/deleteTransaction/editTransaction
                 window.saveTransactionsToDB(activeAccountId, transactions).catch((e) => {
                     console.error('Errore salvataggio IndexedDB:', e);
                 });
-                // Sync su Firestore in background (se loggato)
-                if (window.FB_READY && userRef.current) {
-                    window.syncTransactionsToFirestore(
-                        activeAccountId, transactions, userRef.current.uid, sharedProfiles.current
-                    ).catch(e => console.error('Firestore sync error:', e));
-                }
             }, [transactions, activeAccountId]);
 
             // ============ REAL-TIME LISTENER (profili condivisi) ============
@@ -1968,17 +1967,19 @@
 		    };
 
             const addTransaction = async (transaction) => {
-                // 1. Aggiorna UI subito
-                const newTransactions = [transaction, ...transactions];
+                // Usa ref invece di transactions (evita stale closure con aggiunte rapide)
+                const current = transactionsRef.current;
+                const newTransactions = [transaction, ...current];
+                transactionsRef.current = newTransactions;
                 setTransactions(newTransactions);
                 setShowModal(false);
 
-                // 2. Salva su IndexedDB locale
+                // Salva su IndexedDB locale
                 try {
                     await window.saveTransactionsToDB(activeAccountId, newTransactions);
                 } catch(e) { console.error('IndexedDB save error:', e); }
 
-                // 3. Sync immediato su Firestore (non in background)
+                // Sync immediato su Firestore
                 if (window.FB_READY && userRef.current) {
                     setSyncStatus('syncing');
                     try {
@@ -1989,9 +1990,32 @@
                         setSyncStatus('synced');
                         setTimeout(() => setSyncStatus('idle'), 3000);
                     } catch(e) {
-                        console.error('Firestore immediate sync error:', e);
+                        console.error('Firestore sync error:', e);
                         setSyncStatus('error');
                     }
+                }
+            };
+
+            // Sync manuale — forza salvataggio su Firestore
+            const syncManual = async () => {
+                const current = transactionsRef.current;
+                if (!window.FB_READY || !userRef.current) {
+                    alert('Non sei connesso a Firebase. Controlla la connessione e il login.');
+                    return;
+                }
+                setSyncStatus('syncing');
+                try {
+                    await window.saveTransactionsToDB(activeAccountId, current);
+                    await window.syncTransactionsToFirestore(
+                        activeAccountId, current,
+                        userRef.current.uid, sharedProfiles.current
+                    );
+                    setSyncStatus('synced');
+                    setTimeout(() => setSyncStatus('idle'), 4000);
+                } catch(e) {
+                    console.error('Manual sync error:', e);
+                    setSyncStatus('error');
+                    alert('Errore sync: ' + e.message);
                 }
             };
 
@@ -3002,7 +3026,7 @@
                             alignItems: 'center', justifyContent: 'center', color: 'white'
                         }}>
                             <div style={{ fontSize: '48px', marginBottom: '16px' }}>💰</div>
-                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 9.2</div>
+                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 9.3</div>
                             <div style={{ fontSize: '13px', marginTop: '8px', opacity: 0.7 }}>Caricamento...</div>
                         </div>
                     )}
@@ -3108,14 +3132,24 @@
                                 )}
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                {/* Indicatore sync */}
-                                {user && syncStatus !== 'idle' && (
-                                    <div title={syncStatus === 'syncing' ? 'Salvataggio...' : syncStatus === 'synced' ? 'Salvato ✓' : 'Errore sync'}
-                                        style={{ fontSize: '16px', lineHeight: 1 }}>
+                                {/* Indicatore sync + tasto Salva manuale */}
+                                {user && (
+                                    <button onClick={syncManual}
+                                        title={syncStatus === 'syncing' ? 'Salvataggio...' : syncStatus === 'synced' ? 'Salvato!' : syncStatus === 'error' ? 'Errore — riprova' : 'Salva su cloud'}
+                                        style={{
+                                            background: syncStatus === 'error' ? 'rgba(244,67,54,0.3)'
+                                                : syncStatus === 'synced' ? 'rgba(76,175,80,0.3)'
+                                                : 'rgba(255,255,255,0.2)',
+                                            border: 'none', color: 'white',
+                                            padding: '6px 10px', borderRadius: '8px',
+                                            cursor: 'pointer', fontSize: '16px',
+                                            display: 'flex', alignItems: 'center', gap: '4px'
+                                        }}>
                                         {syncStatus === 'syncing' && <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>🔄</span>}
-                                        {syncStatus === 'synced'  && <span>☁️✅</span>}
-                                        {syncStatus === 'error'   && <span title="Errore sync — riprova">⚠️</span>}
-                                    </div>
+                                        {syncStatus === 'synced'  && '☁️✅'}
+                                        {syncStatus === 'error'   && '⚠️'}
+                                        {syncStatus === 'idle'    && '☁️'}
+                                    </button>
                                 )}
                                 {/* Avatar utente / login */}
                                 {user ? (
@@ -7622,7 +7656,7 @@
                     }}>
                         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                             <div style={{ fontSize: '48px', marginBottom: '8px' }}>💰</div>
-                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 9.2</h2>
+                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 9.3</h2>
                             <p style={{ margin: '6px 0 0', color: '#888', fontSize: '14px' }}>
                                 {isSignup ? 'Crea un account' : 'Accedi per sincronizzare i dati'}
                             </p>
