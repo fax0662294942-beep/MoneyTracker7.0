@@ -4526,7 +4526,274 @@
             const [note, setNote] = useState('');
             const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
             const [selectedTags, setSelectedTags] = useState([]);
-            const [newTagInput, setNewTagInput] = useState('');
+            const [showExtra, setShowExtra] = useState(false); // note/tag/data nascosti di default
+
+            const allAccounts = getAccountsFilter().filter(a => a.id !== 'all');
+            const allCategories = getCategoriesFromStorage();
+            const allTags = getTagsFromStorage();
+
+            // ── Logica padre/figlio ──
+            // Categorie con " > " nel nome → "Padre > Figlio"
+            const buildCategoryTree = (cats) => {
+                const parents = {};   // parentName → { ...catInfo, children: [] }
+                const roots = [];     // categorie senza padre (o con nome senza " > ")
+
+                cats.forEach(cat => {
+                    const sep = cat.name.indexOf(' > ');
+                    if (sep > 0) {
+                        const parentName = cat.name.slice(0, sep).trim();
+                        const childName  = cat.name.slice(sep + 3).trim();
+                        if (!parents[parentName]) {
+                            // Crea nodo padre virtuale
+                            parents[parentName] = {
+                                id: 'parent__' + parentName,
+                                name: parentName,
+                                icon: cat.icon,
+                                color: cat.color,
+                                isVirtualParent: true,
+                                children: []
+                            };
+                        }
+                        parents[parentName].children.push({ ...cat, shortName: childName });
+                    } else {
+                        roots.push({ ...cat, children: [], isVirtualParent: false });
+                    }
+                });
+
+                // Unisci: prima i root, poi i parent virtuali
+                const allParents = [...roots];
+                Object.values(parents).forEach(p => {
+                    // Se esiste già un root con stesso nome, aggiungi i figli
+                    const existing = allParents.find(r => r.name === p.name);
+                    if (existing) {
+                        existing.children = p.children;
+                    } else {
+                        allParents.push(p);
+                    }
+                });
+                return allParents;
+            };
+
+            const tree = buildCategoryTree(allCategories[type] || []);
+
+            // Quale padre è selezionato (dalla categoria selezionata)
+            const selectedParentId = (() => {
+                if (!category) return null;
+                // La categoria selezionata è un figlio?
+                for (const p of tree) {
+                    if (p.children?.find(c => c.id === category)) return p.id;
+                    if (p.id === category) return p.id;
+                }
+                return null;
+            })();
+
+            const selectedParent = tree.find(p => p.id === selectedParentId);
+            const subcats = selectedParent?.children || [];
+
+            const selectParent = (parent) => {
+                if (parent.children && parent.children.length > 0) {
+                    // Ha figli: seleziona il padre come "pending", aspetta il figlio
+                    setCategory(parent.id);
+                } else {
+                    setCategory(parent.id);
+                }
+            };
+
+            const isValid = amount && parseFloat(amount) > 0 && category &&
+                // Se il padre ha figli, deve essere selezionato un figlio
+                !(selectedParent?.children?.length > 0 && selectedParent?.id === category && !selectedParent?.isVirtualParent === false);
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (!amount || !category) return;
+                // Se è un padre virtuale con figli, non confermare
+                if (selectedParent?.isVirtualParent && selectedParent?.children?.length > 0 && selectedParent?.id === category) return;
+
+                onAdd({
+                    id: Date.now(),
+                    type,
+                    amount: parseFloat(amount),
+                    category,
+                    account,
+                    note,
+                    date: new Date(date + 'T12:00:00').toISOString(),
+                    tags: selectedTags
+                });
+            };
+
+            const accentColor = type === 'expense' ? '#f44336' : '#4caf50';
+            const selectedCatInfo = allCategories[type]?.find(c => c.id === category);
+
+            return (
+                <div className="modal" onClick={onClose}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ padding: '0', maxHeight: '92vh' }}>
+
+                        {/* Header compatto con tipo + conto */}
+                        <div style={{ display:'flex', borderBottom:'1px solid #f0f0f0' }}>
+                            <button type="button" onClick={() => { setType('expense'); setCategory(''); }}
+                                style={{ flex:1, padding:'14px', border:'none', fontWeight:'800', fontSize:'15px',
+                                    background: type==='expense' ? '#f44336' : 'white',
+                                    color: type==='expense' ? 'white' : '#ccc',
+                                    borderRadius:'20px 0 0 0', cursor:'pointer' }}>
+                                Uscita
+                            </button>
+                            <button type="button" onClick={() => { setType('income'); setCategory(''); }}
+                                style={{ flex:1, padding:'14px', border:'none', fontWeight:'800', fontSize:'15px',
+                                    background: type==='income' ? '#4caf50' : 'white',
+                                    color: type==='income' ? 'white' : '#ccc',
+                                    borderRadius:'0 20px 0 0', cursor:'pointer' }}>
+                                Entrata
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSubmit} style={{ padding:'16px' }}>
+
+                            {/* Importo grande + conto su stessa riga */}
+                            <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'14px' }}>
+                                <input
+                                    type="number" step="0.01" inputMode="decimal"
+                                    value={amount} onChange={e => setAmount(e.target.value)}
+                                    onFocus={e => e.target.select()}
+                                    placeholder="0.00" required
+                                    style={{
+                                        flex:1, border:'none', outline:'none',
+                                        fontSize:'32px', fontWeight:'800',
+                                        color: accentColor, background:'transparent',
+                                        minWidth:0
+                                    }}
+                                />
+                                <select value={account} onChange={e => setAccount(e.target.value)}
+                                    style={{ border:'1px solid #e0e0e0', borderRadius:'20px', padding:'6px 10px',
+                                        fontSize:'13px', background:'white', cursor:'pointer', maxWidth:'140px' }}>
+                                    {allAccounts.map(acc => (
+                                        <option key={acc.id} value={acc.id}>{acc.icon} {acc.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Categoria selezionata (breadcrumb) */}
+                            {category && selectedCatInfo && (
+                                <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'10px',
+                                    padding:'6px 12px', background: selectedCatInfo.color + '18',
+                                    borderRadius:'20px', width:'fit-content' }}>
+                                    <span>{selectedCatInfo.icon}</span>
+                                    <span style={{ fontSize:'13px', fontWeight:'700', color: selectedCatInfo.color }}>
+                                        {selectedCatInfo.name}
+                                    </span>
+                                    <button type="button" onClick={() => setCategory('')}
+                                        style={{ border:'none', background:'none', color:'#aaa', cursor:'pointer', fontSize:'16px', lineHeight:1 }}>×</button>
+                                </div>
+                            )}
+
+                            {/* Categorie padre — scroll orizzontale */}
+                            <div style={{ overflowX:'auto', display:'flex', gap:'8px', paddingBottom:'6px', marginBottom:'8px', scrollbarWidth:'none' }}>
+                                {tree.filter(p => !p.archived).map(parent => {
+                                    const isSelected = selectedParentId === parent.id;
+                                    return (
+                                        <button key={parent.id} type="button"
+                                            onClick={() => selectParent(parent)}
+                                            style={{
+                                                flexShrink:0, display:'flex', alignItems:'center', gap:'6px',
+                                                padding:'7px 14px', borderRadius:'20px', border:'2px solid',
+                                                borderColor: isSelected ? parent.color : '#e0e0e0',
+                                                background: isSelected ? parent.color : 'white',
+                                                color: isSelected ? 'white' : '#444',
+                                                cursor:'pointer', fontSize:'13px', fontWeight: isSelected ? '700' : '400',
+                                                whiteSpace:'nowrap', transition:'all 0.15s'
+                                            }}>
+                                            <span style={{ fontSize:'16px' }}>{parent.icon}</span>
+                                            {parent.name}
+                                            {parent.children?.length > 0 && (
+                                                <span style={{ fontSize:'10px', opacity:0.7 }}>▾</span>
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Sottocategorie — appaiono solo se il padre ha figli */}
+                            {subcats.length > 0 && (
+                                <div style={{ overflowX:'auto', display:'flex', gap:'6px', paddingBottom:'6px',
+                                    marginBottom:'8px', paddingLeft:'8px', scrollbarWidth:'none' }}>
+                                    {subcats.map(sub => {
+                                        const isSelected = category === sub.id;
+                                        return (
+                                            <button key={sub.id} type="button"
+                                                onClick={() => setCategory(sub.id)}
+                                                style={{
+                                                    flexShrink:0, display:'flex', alignItems:'center', gap:'5px',
+                                                    padding:'5px 12px', borderRadius:'20px', border:'2px solid',
+                                                    borderColor: isSelected ? sub.color : sub.color + '66',
+                                                    background: isSelected ? sub.color : sub.color + '15',
+                                                    color: isSelected ? 'white' : sub.color,
+                                                    cursor:'pointer', fontSize:'12px', fontWeight: isSelected ? '700' : '500',
+                                                    whiteSpace:'nowrap', transition:'all 0.15s'
+                                                }}>
+                                                <span style={{ fontSize:'14px' }}>{sub.icon}</span>
+                                                {sub.shortName}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
+                            {/* Note inline */}
+                            <input type="text" value={note} onChange={e => setNote(e.target.value)}
+                                placeholder="📝 Note (opzionale)"
+                                style={{ width:'100%', border:'none', borderBottom:'1px solid #f0f0f0',
+                                    padding:'8px 0', fontSize:'14px', outline:'none',
+                                    background:'transparent', marginBottom:'12px', boxSizing:'border-box' }}
+                            />
+
+                            {/* Data + Extra toggle su stessa riga */}
+                            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'14px' }}>
+                                <input type="date" value={date} onChange={e => setDate(e.target.value)}
+                                    style={{ border:'1px solid #e0e0e0', borderRadius:'20px', padding:'6px 12px',
+                                        fontSize:'13px', background:'white', cursor:'pointer' }} />
+                                <button type="button" onClick={() => setShowExtra(!showExtra)}
+                                    style={{ border:'none', background:'none', color:'#aaa', fontSize:'12px', cursor:'pointer' }}>
+                                    {showExtra ? '▲ Nascondi' : '🏷️ Tag'}
+                                </button>
+                            </div>
+
+                            {/* Tag — solo se aperti */}
+                            {showExtra && allTags.length > 0 && (
+                                <div style={{ display:'flex', flexWrap:'wrap', gap:'6px', marginBottom:'12px' }}>
+                                    {allTags.map(tag => (
+                                        <button key={tag.id} type="button"
+                                            onClick={() => setSelectedTags(prev =>
+                                                prev.includes(tag.id) ? prev.filter(t => t !== tag.id) : [...prev, tag.id]
+                                            )}
+                                            style={{ padding:'4px 10px', borderRadius:'20px',
+                                                border:'2px solid ' + tag.color,
+                                                background: selectedTags.includes(tag.id) ? tag.color : 'transparent',
+                                                color: selectedTags.includes(tag.id) ? 'white' : tag.color,
+                                                fontSize:'12px', cursor:'pointer', fontWeight:'bold' }}>
+                                            # {tag.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Bottone conferma */}
+                            <button type="submit"
+                                disabled={!amount || !category || parseFloat(amount) <= 0}
+                                style={{
+                                    width:'100%', padding:'14px', border:'none', borderRadius:'12px',
+                                    background: (!amount || !category || parseFloat(amount) <= 0)
+                                        ? '#e0e0e0'
+                                        : accentColor,
+                                    color: (!amount || !category || parseFloat(amount) <= 0) ? '#aaa' : 'white',
+                                    fontSize:'16px', fontWeight:'800', cursor: (!amount || !category) ? 'default' : 'pointer',
+                                    transition:'all 0.2s'
+                                }}>
+                                {type === 'expense' ? '➕ Aggiungi Uscita' : '➕ Aggiungi Entrata'}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            );
+        }
             const allAccounts = getAccountsFilter().filter(a => a.id !== 'all');
             const allCategories = getCategoriesFromStorage();
             const allTags = getTagsFromStorage();
@@ -4554,163 +4821,6 @@
                     prev.includes(tagId) ? prev.filter(t => t !== tagId) : [...prev, tagId]
                 );
             };
-
-            const handleAddNewTag = () => {
-                if (!newTagInput.trim()) return;
-                const tagId = getOrCreateTag(newTagInput.trim());
-                if (tagId && !selectedTags.includes(tagId)) {
-                    setSelectedTags(prev => [...prev, tagId]);
-                }
-                setNewTagInput('');
-            };
-
-            return (
-                <div className="modal" onClick={onClose}>
-                    <div className="modal-content" onClick={e => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h2 className="modal-title">Nuova Transazione</h2>
-                            <button className="close-btn" onClick={onClose}>×</button>
-                        </div>
-
-                        <form onSubmit={handleSubmit}>
-                            <div className="type-selector">
-                                <button 
-                                    type="button"
-                                    className={`type-btn expense ${type === 'expense' ? 'active' : ''}`}
-                                    onClick={() => { setType('expense'); setCategory(''); }}
-                                >
-                                    Uscita
-                                </button>
-                                <button 
-                                    type="button"
-                                    className={`type-btn income ${type === 'income' ? 'active' : ''}`}
-                                    onClick={() => { setType('income'); setCategory(''); }}
-                                >
-                                    Entrata
-                                </button>
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label">Importo (€)</label>
-                                <input 
-                                    type="number" 
-                                    step="0.01"
-                                    className="form-input"
-                                    value={amount}
-                                    onChange={e => setAmount(e.target.value)}
-                                    placeholder="0.00"
-                                    required
-                                />
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label">Conto</label>
-                                <select 
-                                    className="form-input"
-                                    value={account}
-                                    onChange={e => setAccount(e.target.value)}
-                                    required
-                                >
-                                    {allAccounts.map(acc => (
-                                        <option key={acc.id} value={acc.id}>
-                                            {acc.icon} {acc.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label">Categoria</label>
-                                <div className="category-grid">
-                                    {(allCategories[type] || []).map(cat => (
-                                        <button
-                                            key={cat.id}
-                                            type="button"
-                                            className={`category-btn ${category === cat.id ? 'active' : ''}`}
-                                            onClick={() => setCategory(cat.id)}
-                                        >
-                                            <div className="category-icon">{cat.icon}</div>
-                                            <div className="category-name">{cat.name}</div>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label">Data</label>
-                                <input 
-                                    type="date"
-                                    className="form-input"
-                                    value={date}
-                                    onChange={e => setDate(e.target.value)}
-                                    required
-                                />
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label">Note (opzionale)</label>
-                                <input 
-                                    type="text"
-                                    className="form-input"
-                                    value={note}
-                                    onChange={e => setNote(e.target.value)}
-                                    placeholder="Aggiungi una nota..."
-                                />
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label">Tag (opzionale)</label>
-                                {/* Tag esistenti */}
-                                {allTags.length > 0 && (
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
-                                        {allTags.map(tag => (
-                                            <button
-                                                key={tag.id}
-                                                type="button"
-                                                onClick={() => toggleTag(tag.id)}
-                                                style={{
-                                                    padding: '4px 10px',
-                                                    borderRadius: '20px',
-                                                    border: '2px solid ' + tag.color,
-                                                    background: selectedTags.includes(tag.id) ? tag.color : 'transparent',
-                                                    color: selectedTags.includes(tag.id) ? 'white' : tag.color,
-                                                    fontSize: '12px',
-                                                    cursor: 'pointer',
-                                                    fontWeight: 'bold'
-                                                }}
-                                            >
-                                                # {tag.name}
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
-                                {/* Crea nuovo tag */}
-                                <div style={{ display: 'flex', gap: '8px' }}>
-                                    <input
-                                        type="text"
-                                        className="form-input"
-                                        value={newTagInput}
-                                        onChange={e => setNewTagInput(e.target.value)}
-                                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddNewTag(); } }}
-                                        placeholder="Nuovo tag..."
-                                        style={{ flex: 1, marginBottom: 0 }}
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={handleAddNewTag}
-                                        style={{ padding: '8px 14px', background: '#667eea', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', whiteSpace: 'nowrap' }}
-                                    >+ Aggiungi</button>
-                                </div>
-                            </div>
-
-                            <button type="submit" className="submit-btn">
-                                Aggiungi Transazione
-                            </button>
-                        </form>
-                    </div>
-                </div>
-            );
-        }
 
 		function CategoriesView({ expenses, budgets, onCategoryClick, onCategoryLongPress, sortMode, setSortMode, mode = 'expense', totalIncome = 0, totalExpense = 0 }) {
             const [categoryOrder, setCategoryOrder] = React.useState([]);
