@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#4CAF50">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>MoneyTracker 8.0 - Gestione Spese</title>
+    <title>MoneyTracker 8.20 - Gestione Spese</title>
     <link rel="manifest" href="manifest.json">
     <script>
         // Registra Service Worker per funzionamento offline
@@ -30,7 +30,8 @@
         import {
             getAuth, GoogleAuthProvider, signInWithPopup,
             signInWithEmailAndPassword, createUserWithEmailAndPassword,
-            onAuthStateChanged, signOut
+            onAuthStateChanged, signOut,
+            reauthenticateWithCredential, reauthenticateWithPopup, EmailAuthProvider
         } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
         import {
             getFirestore, enableIndexedDbPersistence,
@@ -63,6 +64,7 @@
             GoogleAuthProvider, signInWithPopup,
             signInWithEmailAndPassword, createUserWithEmailAndPassword,
             onAuthStateChanged, signOut,
+            reauthenticateWithCredential, reauthenticateWithPopup, EmailAuthProvider,
             doc, setDoc, getDoc, collection, getDocs, addDoc, deleteDoc,
             onSnapshot, query, where, serverTimestamp
         };
@@ -2136,6 +2138,16 @@
                             const note             = fields[9] || fields[7] || '';
 
                             // Salta solo i trasferimenti senza conto destinazione valido
+                            // Parse data (gg/mm/aa o gg/mm/aaaa) — PRIMA del blocco Trasferimento
+                            let dateObj = new Date();
+                            const dateParts = data.split('/');
+                            if (dateParts.length === 3) {
+                                const giorno = parseInt(dateParts[0]);
+                                const mese   = parseInt(dateParts[1]) - 1;
+                                const anno   = dateParts[2].length === 2 ? 2000 + parseInt(dateParts[2]) : parseInt(dateParts[2]);
+                                dateObj = new Date(anno, mese, giorno, 12, 0, 0); // T12:00 evita shift timezone
+                            }
+
                             if (tipologia === 'Trasferimento' || tipologia.toLowerCase().includes('transfer')) {
                                 // Crea coppia expense+income come trasferimento tra wallet
                                 const fromW = getOrCreateAccount(dalConto);
@@ -2172,15 +2184,8 @@
                                 }
                                 continue;
                             }
-
-                            // Parse data (gg/mm/aa o gg/mm/aaaa)
-                            let dateObj = new Date();
-                            const dateParts = data.split('/');
-                            if (dateParts.length === 3) {
-                                const giorno = parseInt(dateParts[0]);
-                                const mese   = parseInt(dateParts[1]) - 1;
-                                const anno   = dateParts[2].length === 2 ? 2000 + parseInt(dateParts[2]) : parseInt(dateParts[2]);
-                                dateObj = new Date(anno, mese, giorno);
+                                }
+                                continue;
                             }
 
                             // Tipo transazione
@@ -2881,7 +2886,7 @@
                             alignItems: 'center', justifyContent: 'center', color: 'white'
                         }}>
                             <div style={{ fontSize: '48px', marginBottom: '16px' }}>💰</div>
-                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 8.0</div>
+                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 8.20</div>
                             <div style={{ fontSize: '13px', marginTop: '8px', opacity: 0.7 }}>Caricamento...</div>
                         </div>
                     )}
@@ -5340,6 +5345,31 @@
             const wallets = getAccountsFilter().filter(a => a.id !== 'all');
             const otherProfiles = accounts.filter(a => a.id !== activeAccountId);
 
+            // Wallet del profilo destinazione (per trasferimenti inter-profilo)
+            const getWalletsForProfile = (profileId) => {
+                if (!profileId) return wallets;
+                try {
+                    const key = `customTransactionAccounts_${profileId}`;
+                    const stored = localStorage.getItem(key) || localStorage.getItem('customTransactionAccounts');
+                    if (stored) {
+                        const parsed = JSON.parse(stored);
+                        const BASE = [
+                            { id: 'cash', name: 'Contanti', icon: '💵' },
+                            { id: 'card', name: 'Carta', icon: '💳' },
+                            { id: 'bank', name: 'Banca', icon: '🏦' },
+                            { id: 'savings', name: 'Risparmi', icon: '🏷️' }
+                        ];
+                        return [...BASE, ...parsed.filter(a => !a.archived && a.id !== 'all')];
+                    }
+                } catch(e) {}
+                return wallets;
+            };
+
+            const targetWallets = React.useMemo(
+                () => getWalletsForProfile(targetAccountId),
+                [targetAccountId]
+            );
+
             const handleSubmit = (e) => {
                 e.preventDefault();
                 if (!amount || parseFloat(amount) <= 0) return;
@@ -5413,13 +5443,15 @@
                                     <div className="form-group">
                                         <label className="form-label">Dal conto</label>
                                         <select className="form-input" value={fromWallet} onChange={e => setFromWallet(e.target.value)}>
+                                            <option value="">Seleziona</option>
                                             {wallets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                                         </select>
                                     </div>
                                     <div className="form-group">
                                         <label className="form-label">Al conto</label>
                                         <select className="form-input" value={toWallet} onChange={e => setToWallet(e.target.value)}>
-                                            {wallets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                                            <option value="">Seleziona</option>
+                                            {targetWallets.map(w => <option key={w.id} value={w.id}>{w.icon} {w.name}</option>)}
                                         </select>
                                     </div>
                                 </div>
@@ -7056,14 +7088,12 @@
             const handleConfirm = async () => {
                 setLoading(true); setError('');
                 try {
-                    // Import dinamico — non nel modulo principale per non bloccarlo
-                    const authModule = await import('https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js');
                     if (isGoogle) {
-                        const provider = new authModule.GoogleAuthProvider();
-                        await authModule.reauthenticateWithPopup(user, provider);
+                        const provider = new window.FB.GoogleAuthProvider();
+                        await window.FB.reauthenticateWithPopup(user, provider);
                     } else {
-                        const cred = authModule.EmailAuthProvider.credential(user.email, password);
-                        await authModule.reauthenticateWithCredential(user, cred);
+                        const cred = window.FB.EmailAuthProvider.credential(user.email, password);
+                        await window.FB.reauthenticateWithCredential(user, cred);
                     }
                     onConfirmed();
                 } catch(e) {
@@ -7187,7 +7217,7 @@
                     }}>
                         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                             <div style={{ fontSize: '48px', marginBottom: '8px' }}>💰</div>
-                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 8.0</h2>
+                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 8.20</h2>
                             <p style={{ margin: '6px 0 0', color: '#888', fontSize: '14px' }}>
                                 {isSignup ? 'Crea un account' : 'Accedi per sincronizzare i dati'}
                             </p>
