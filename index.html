@@ -4913,19 +4913,65 @@
                                 >
                                     {/* Tasto archivia — nascosto, accessibile dal menu long-press */}
 
-                                    <div className="category-circle" style={{ background: category.color }}>
-                                        {category.icon}
+                                    <div className="category-circle" style={{
+                                        background: amount === 0
+                                            ? `${category.color}22`  // quasi trasparente se vuoto
+                                            : exceeded
+                                                ? category.color      // pieno se superato
+                                                : 'transparent',      // gestito dal fill sotto
+                                        border: exceeded
+                                            ? `3px solid ${category.color}`
+                                            : amount === 0
+                                                ? `2px solid ${category.color}44`
+                                                : `2px solid ${category.color}88`,
+                                        boxShadow: exceeded
+                                            ? `0 0 12px ${category.color}bb, 0 0 24px ${category.color}55`
+                                            : '0 2px 8px rgba(0,0,0,0.1)',
+                                        overflow: 'hidden',
+                                        position: 'relative'
+                                    }}>
+                                        {/* Fill dal basso proporzionale al budget */}
+                                        {amount > 0 && !exceeded && budget > 0 && (
+                                            <div style={{
+                                                position: 'absolute',
+                                                bottom: 0, left: 0, right: 0,
+                                                height: `${Math.min(100, Math.round(amount / budget * 100))}%`,
+                                                background: `${category.color}cc`,
+                                                borderRadius: '0 0 50px 50px',
+                                                transition: 'height 0.4s ease'
+                                            }} />
+                                        )}
+                                        {/* Nessun budget: fill piatto proporzionale al totale spese */}
+                                        {amount > 0 && !exceeded && budget === 0 && (
+                                            <div style={{
+                                                position: 'absolute',
+                                                bottom: 0, left: 0, right: 0,
+                                                height: '40%',
+                                                background: `${category.color}66`,
+                                                borderRadius: '0 0 50px 50px'
+                                            }} />
+                                        )}
+                                        <span style={{ position: 'relative', zIndex: 1 }}>{category.icon}</span>
                                     </div>
 		                <div className="category-amount" style={{ color: exceeded ? '#f44336' : category.color }}>
                                         {amount.toFixed(0)} €
                                     </div>
                                     <div className="category-name-small">{category.name}</div>
 		                {mode === 'expense' && budget > 0 && (
-                                        <div style={{ fontSize: exceeded ? '10px' : '9px', color: exceeded ? '#f44336' : '#999', fontWeight: exceeded ? 'bold' : 'normal', marginTop: '2px' }}>
-                                            {exceeded
-                                                ? <span style={{ color: '#f44336', fontWeight: 'bold' }}>+{Math.abs(remaining).toFixed(0)} €</span>
-                                                : <span>{budget.toFixed(0)} €</span>
-                                            }
+                                        <div style={{ fontSize: '10px', marginTop: '2px', lineHeight: 1.2 }}>
+                                            {exceeded ? (
+                                                <span style={{
+                                                    display: 'inline-block',
+                                                    background: '#f44336',
+                                                    color: 'white',
+                                                    fontWeight: 'bold',
+                                                    padding: '1px 5px',
+                                                    borderRadius: '4px',
+                                                    fontSize: '10px'
+                                                }}>+{Math.abs(remaining).toFixed(0)} €</span>
+                                            ) : (
+                                                <span style={{ color: '#aaa' }}>{budget.toFixed(0)} €</span>
+                                            )}
                                         </div>
                                     )}
                                 </div>
