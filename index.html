@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#4CAF50">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>MoneyTracker 8.20.4 - Gestione Spese</title>
+    <title>MoneyTracker 8.20.6 - Gestione Spese</title>
     <link rel="manifest" href="manifest.json">
     <script>
         // Registra Service Worker per funzionamento offline
@@ -1149,6 +1149,12 @@
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
+
+        // ============ VERSIONE APP ============
+        const APP_VERSION = '8.20.6';
+        const APP_BUILD_DATE = '20/04/2026 05:11';
+
+
 
         // ============ CATEGORIE E CONTI BASE (DEFAULT) ============
         const DEFAULT_CATEGORIES = {
@@ -2886,7 +2892,7 @@
                             alignItems: 'center', justifyContent: 'center', color: 'white'
                         }}>
                             <div style={{ fontSize: '48px', marginBottom: '16px' }}>💰</div>
-                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 8.20.4</div>
+                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 8.20.6</div>
                             <div style={{ fontSize: '13px', marginTop: '8px', opacity: 0.7 }}>Caricamento...</div>
                         </div>
                     )}
@@ -6154,6 +6160,27 @@
                                 </div>
                             </div>
 
+                            {/* ── Info Versione ── */}
+                            <div style={{
+                                background: 'linear-gradient(135deg, #667eea11, #764ba211)',
+                                border: '1px solid #667eea33',
+                                borderRadius: '12px',
+                                padding: '14px 16px',
+                                marginBottom: '16px',
+                                textAlign: 'center'
+                            }}>
+                                <div style={{ fontSize: '24px', marginBottom: '6px' }}>💰</div>
+                                <div style={{ fontWeight: '800', fontSize: '16px', color: '#667eea' }}>
+                                    MoneyTracker {APP_VERSION}
+                                </div>
+                                <div style={{ fontSize: '11px', color: '#aaa', marginTop: '4px' }}>
+                                    Build: {APP_BUILD_DATE}
+                                </div>
+                                <div style={{ fontSize: '11px', color: '#bbb', marginTop: '2px' }}>
+                                    Firebase · Offline-first · PWA
+                                </div>
+                            </div>
+
                             <button type="submit" className="submit-btn">
                                 💾 Salva Impostazioni
                             </button>
@@ -7244,7 +7271,7 @@
                     }}>
                         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                             <div style={{ fontSize: '48px', marginBottom: '8px' }}>💰</div>
-                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 8.20.4</h2>
+                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 8.20.6</h2>
                             <p style={{ margin: '6px 0 0', color: '#888', fontSize: '14px' }}>
                                 {isSignup ? 'Crea un account' : 'Accedi per sincronizzare i dati'}
                             </p>
