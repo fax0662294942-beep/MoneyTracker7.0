@@ -1,13 +1,18 @@
-const CACHE_NAME = 'moneytracker-v900';
+const CACHE_NAME = 'moneytracker-v902';
+const LOCAL_ASSETS = ['./index.html', './manifest.json'];
 
+// Installa e pre-cacha gli asset locali
 self.addEventListener('install', (event) => {
-  // Attiva subito senza aspettare che le vecchie tab vengano chiuse
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(cache => cache.addAll(LOCAL_ASSETS)).catch(() => {})
+  );
   self.skipWaiting();
 });
 
+// Attiva: elimina cache vecchie
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
+    caches.keys().then(keys =>
       Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
     )
   );
@@ -16,26 +21,34 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
-  const url = event.request.url;
-  const isHTML = event.request.mode === 'navigate' || url.endsWith('.html');
-  const isCDN  = url.includes('unpkg.com') || url.includes('jsdelivr') || url.includes('cdnjs') || url.includes('gstatic') || url.includes('firebasejs');
 
-  if (isHTML) {
-    // HTML: sempre dal network, fallback cache
+  const url = event.request.url;
+  const isNavigate = event.request.mode === 'navigate';
+  const isLocal = url.includes(self.location.origin);
+  const isCDN = url.includes('unpkg.com') || url.includes('jsdelivr') ||
+                url.includes('cdnjs') || url.includes('gstatic') ||
+                url.includes('firebasejs') || url.includes('googleapis');
+
+  if (isNavigate || (isLocal && !isCDN)) {
+    // Asset locali e navigazione: network-first, fallback cache
     event.respondWith(
-      fetch(event.request).then(res => {
-        const clone = res.clone();
-        caches.open(CACHE_NAME).then(c => c.put(event.request, clone));
-        return res;
-      }).catch(() => caches.match(event.request))
+      fetch(event.request)
+        .then(res => {
+          if (res && res.status === 200) {
+            const clone = res.clone();
+            caches.open(CACHE_NAME).then(c => c.put(event.request, clone));
+          }
+          return res;
+        })
+        .catch(() => caches.match(event.request))
     );
   } else if (isCDN) {
-    // Librerie CDN: cache-first (non cambiano)
+    // Librerie CDN: cache-first (non cambiano mai)
     event.respondWith(
       caches.match(event.request).then(cached => {
         if (cached) return cached;
         return fetch(event.request).then(res => {
-          if (res.ok) {
+          if (res && res.ok) {
             const clone = res.clone();
             caches.open(CACHE_NAME).then(c => c.put(event.request, clone));
           }
@@ -44,5 +57,5 @@ self.addEventListener('fetch', (event) => {
       })
     );
   }
-  // Tutto il resto: pass-through senza cache
+  // Firebase API, auth, Firestore: sempre network (nessun intercept)
 });
