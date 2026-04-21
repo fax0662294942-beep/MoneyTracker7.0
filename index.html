@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#4CAF50">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>MoneyTracker 9.7 - Gestione Spese</title>
+    <title>MoneyTracker 9.8 - Gestione Spese</title>
     <link rel="manifest" href="manifest.json">
     <script>
         // Registra Service Worker per funzionamento offline
@@ -1169,8 +1169,8 @@
         const { useState, useEffect, useRef } = React;
 
         // ============ VERSIONE APP ============
-        const APP_VERSION = '9.7';
-        const APP_BUILD_DATE = '21/04/2026 15:42';
+        const APP_VERSION = '9.8';
+        const APP_BUILD_DATE = '21/04/2026 15:49';
 
 
 
@@ -1500,50 +1500,46 @@
                             localStorage.setItem('moneyTrackerAccounts', JSON.stringify(data.accounts));
                             localStorage.setItem('moneyTrackerActiveAccount', activeId);
 
-                            // ── RIPRISTINA WALLET ──
+                            // ── RIPRISTINA WALLET — Firestore vince sempre ──
                             if (data.walletsByProfile) {
                                 Object.keys(data.walletsByProfile).forEach(profileId => {
                                     const wallets = data.walletsByProfile[profileId];
                                     if (wallets && wallets.length > 0) {
-                                        const key = 'customTransactionAccounts_' + profileId;
-                                        if (!localStorage.getItem(key)) {
-                                            localStorage.setItem(key, JSON.stringify(wallets));
-                                        }
+                                        localStorage.setItem('customTransactionAccounts_' + profileId, JSON.stringify(wallets));
                                     }
                                 });
                             }
 
-                            // ── RIPRISTINA CATEGORIE ──
-                            if (data.categories && !localStorage.getItem('customCategories_v2')) {
+                            // ── RIPRISTINA CATEGORIE — Firestore vince sempre ──
+                            if (data.categories) {
                                 localStorage.setItem('customCategories_v2', JSON.stringify(data.categories));
                             }
 
-                            // ── RIPRISTINA TAG ──
-                            if (data.tags && !localStorage.getItem('moneyTrackerTags')) {
+                            // ── RIPRISTINA TAG — Firestore vince sempre ──
+                            if (data.tags) {
                                 localStorage.setItem('moneyTrackerTags', JSON.stringify(data.tags));
                             }
 
-                            // ── CARICA TRANSAZIONI DA FIRESTORE SUBITO ──
-                            // Non aspettare l'useEffect — evita race condition con userRef
+                            // ── CARICA TRANSAZIONI — Firestore vince sempre ──
                             if (activeId) {
                                 setSyncStatus('syncing');
                                 try {
-                                    const localTxs = await window.loadTransactionsFromDB(activeId);
-                                    if (localTxs.length === 0) {
-                                        // Dispositivo nuovo/pulito: scarica da Firestore
-                                        const firestoreTxs = await window.loadTransactionsFromFirestore(
-                                            activeId, firebaseUser.uid,
-                                            data.accounts.filter(a => a.shared).map(a => a.id)
-                                        );
-                                        if (firestoreTxs && firestoreTxs.length > 0) {
-                                            await window.saveTransactionsToDB(activeId, firestoreTxs);
-                                            isLoadingTransactions.current = false;
-                                            setTransactions(firestoreTxs);
-                                        }
+                                    const sharedIds = data.accounts.filter(a => a.shared).map(a => a.id);
+                                    const [localTxs, firestoreTxs] = await Promise.all([
+                                        window.loadTransactionsFromDB(activeId),
+                                        window.loadTransactionsFromFirestore(activeId, firebaseUser.uid, sharedIds)
+                                    ]);
+                                    // Usa Firestore se ha più transazioni, altrimenti usa locale
+                                    const best = (firestoreTxs && firestoreTxs.length >= localTxs.length)
+                                        ? firestoreTxs : localTxs;
+                                    if (best.length > 0) {
+                                        await window.saveTransactionsToDB(activeId, best);
+                                        isLoadingTransactions.current = false;
+                                        setTransactions(best);
                                     }
-                                    // Carica anche budgets/settings da Firestore se locali vuoti
                                     if (data.debts) setDebts(data.debts);
                                     setSyncStatus('synced');
+                                    setTimeout(() => setSyncStatus('idle'), 3000);
                                 } catch(e) {
                                     console.error('Firestore load on login error:', e);
                                     setSyncStatus('error');
@@ -3057,7 +3053,7 @@
                             alignItems: 'center', justifyContent: 'center', color: 'white'
                         }}>
                             <div style={{ fontSize: '48px', marginBottom: '16px' }}>💰</div>
-                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 9.7</div>
+                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 9.8</div>
                             <div style={{ fontSize: '13px', marginTop: '8px', opacity: 0.7 }}>Caricamento...</div>
                         </div>
                     )}
@@ -7726,7 +7722,7 @@
                     }}>
                         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                             <div style={{ fontSize: '48px', marginBottom: '8px' }}>💰</div>
-                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 9.7</h2>
+                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 9.8</h2>
                             <p style={{ margin: '6px 0 0', color: '#888', fontSize: '14px' }}>
                                 {isSignup ? 'Crea un account' : 'Accedi per sincronizzare i dati'}
                             </p>
