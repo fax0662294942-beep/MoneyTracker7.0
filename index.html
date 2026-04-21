@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#4CAF50">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>MoneyTracker 9.5 - Gestione Spese</title>
+    <title>MoneyTracker 9.6 - Gestione Spese</title>
     <link rel="manifest" href="manifest.json">
     <script>
         // Registra Service Worker per funzionamento offline
@@ -1169,8 +1169,8 @@
         const { useState, useEffect, useRef } = React;
 
         // ============ VERSIONE APP ============
-        const APP_VERSION = '9.5';
-        const APP_BUILD_DATE = '21/04/2026 15:18';
+        const APP_VERSION = '9.6';
+        const APP_BUILD_DATE = '21/04/2026 15:34';
 
 
 
@@ -3057,7 +3057,7 @@
                             alignItems: 'center', justifyContent: 'center', color: 'white'
                         }}>
                             <div style={{ fontSize: '48px', marginBottom: '16px' }}>💰</div>
-                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 9.5</div>
+                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 9.6</div>
                             <div style={{ fontSize: '13px', marginTop: '8px', opacity: 0.7 }}>Caricamento...</div>
                         </div>
                     )}
@@ -4895,25 +4895,31 @@
                             </button>
                         </div>
 
-                        <form onSubmit={handleSubmit} style={{ padding:'16px' }}>
+                        <form onSubmit={handleSubmit} style={{ padding:'16px', overflowY:'auto' }}>
 
-                            {/* Importo grande + conto su stessa riga */}
-                            <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'14px' }}>
+                            {/* Importo grande */}
+                            <div style={{ marginBottom:'12px', borderBottom:'2px solid #f0f0f0', paddingBottom:'12px' }}>
                                 <input
                                     type="number" step="0.01" inputMode="decimal"
                                     value={amount} onChange={e => setAmount(e.target.value)}
                                     onFocus={e => e.target.select()}
                                     placeholder="0.00" required
                                     style={{
-                                        flex:1, border:'none', outline:'none',
-                                        fontSize:'32px', fontWeight:'800',
+                                        width:'100%', border:'none', outline:'none',
+                                        fontSize:'38px', fontWeight:'800',
                                         color: accentColor, background:'transparent',
-                                        minWidth:0
+                                        textAlign:'center'
                                     }}
                                 />
+                            </div>
+
+                            {/* Conto — riga dedicata, più visibile */}
+                            <div style={{ marginBottom:'12px' }}>
+                                <div style={{ fontSize:'11px', fontWeight:'700', color:'#999', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:'5px' }}>Conto</div>
                                 <select value={account} onChange={e => setAccount(e.target.value)}
-                                    style={{ border:'1px solid #e0e0e0', borderRadius:'20px', padding:'6px 10px',
-                                        fontSize:'13px', background:'white', cursor:'pointer', maxWidth:'140px' }}>
+                                    style={{ width:'100%', border:'2px solid #e0e0e0', borderRadius:'12px',
+                                        padding:'10px 14px', fontSize:'15px', fontWeight:'600',
+                                        background:'white', cursor:'pointer' }}>
                                     {allAccounts.map(acc => (
                                         <option key={acc.id} value={acc.id}>{acc.icon} {acc.name}</option>
                                     ))}
@@ -4922,7 +4928,7 @@
 
                             {/* Categoria selezionata (breadcrumb) */}
                             {category && selectedCatInfo && (
-                                <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'10px',
+                                <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'8px',
                                     padding:'6px 12px', background: selectedCatInfo.color + '18',
                                     borderRadius:'20px', width:'fit-content' }}>
                                     <span>{selectedCatInfo.icon}</span>
@@ -4934,21 +4940,21 @@
                                 </div>
                             )}
 
-                            {/* Categorie padre — scroll orizzontale */}
-                            <div style={{ overflowX:'auto', display:'flex', gap:'8px', paddingBottom:'6px', marginBottom:'8px', scrollbarWidth:'none' }}>
+                            {/* Categorie padre — su più righe (wrap) */}
+                            <div style={{ display:'flex', flexWrap:'wrap', gap:'8px', marginBottom:'8px' }}>
                                 {tree.filter(p => !p.archived).map(parent => {
                                     const isSelected = selectedParentId === parent.id;
                                     return (
                                         <button key={parent.id} type="button"
                                             onClick={() => selectParent(parent)}
                                             style={{
-                                                flexShrink:0, display:'flex', alignItems:'center', gap:'6px',
+                                                display:'flex', alignItems:'center', gap:'6px',
                                                 padding:'7px 14px', borderRadius:'20px', border:'2px solid',
                                                 borderColor: isSelected ? parent.color : '#e0e0e0',
                                                 background: isSelected ? parent.color : 'white',
                                                 color: isSelected ? 'white' : '#444',
                                                 cursor:'pointer', fontSize:'13px', fontWeight: isSelected ? '700' : '400',
-                                                whiteSpace:'nowrap', transition:'all 0.15s'
+                                                transition:'all 0.15s'
                                             }}>
                                             <span style={{ fontSize:'16px' }}>{parent.icon}</span>
                                             {parent.name}
@@ -4960,10 +4966,10 @@
                                 })}
                             </div>
 
-                            {/* Sottocategorie — appaiono solo se il padre ha figli */}
+                            {/* Sottocategorie — su più righe (wrap) */}
                             {subcats.length > 0 && (
-                                <div style={{ overflowX:'auto', display:'flex', gap:'6px', paddingBottom:'6px',
-                                    marginBottom:'8px', paddingLeft:'8px', scrollbarWidth:'none' }}>
+                                <div style={{ display:'flex', flexWrap:'wrap', gap:'6px',
+                                    marginBottom:'8px', paddingLeft:'8px' }}>
                                     {subcats.map(sub => {
                                         const isSelected = category === sub.id;
                                         return (
@@ -5038,12 +5044,16 @@
                             />
 
                             {/* Data + Extra toggle su stessa riga */}
-                            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'14px' }}>
-                                <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                                    style={{ border:'1px solid #e0e0e0', borderRadius:'20px', padding:'6px 12px',
-                                        fontSize:'13px', background:'white', cursor:'pointer' }} />
+                            <div style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between', marginBottom:'14px', gap:'10px' }}>
+                                <div style={{ flex:1 }}>
+                                    <div style={{ fontSize:'11px', fontWeight:'700', color:'#999', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:'5px' }}>Data</div>
+                                    <input type="date" value={date} onChange={e => setDate(e.target.value)}
+                                        style={{ width:'100%', border:'2px solid #e0e0e0', borderRadius:'12px',
+                                            padding:'10px 14px', fontSize:'15px', fontWeight:'600',
+                                            background:'white', cursor:'pointer', boxSizing:'border-box' }} />
+                                </div>
                                 <button type="button" onClick={() => setShowExtra(!showExtra)}
-                                    style={{ border:'none', background:'none', color:'#aaa', fontSize:'12px', cursor:'pointer' }}>
+                                    style={{ border:'none', background:'none', color:'#aaa', fontSize:'12px', cursor:'pointer', paddingBottom:'12px', whiteSpace:'nowrap' }}>
                                     {showExtra ? '▲ Nascondi' : '🏷️ Tag'}
                                 </button>
                             </div>
@@ -7716,7 +7726,7 @@
                     }}>
                         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                             <div style={{ fontSize: '48px', marginBottom: '8px' }}>💰</div>
-                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 9.5</h2>
+                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 9.6</h2>
                             <p style={{ margin: '6px 0 0', color: '#888', fontSize: '14px' }}>
                                 {isSignup ? 'Crea un account' : 'Accedi per sincronizzare i dati'}
                             </p>
