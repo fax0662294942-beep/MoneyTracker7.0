@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#4CAF50">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>MoneyTracker 9.6 - Gestione Spese</title>
+    <title>MoneyTracker 9.7 - Gestione Spese</title>
     <link rel="manifest" href="manifest.json">
     <script>
         // Registra Service Worker per funzionamento offline
@@ -1169,8 +1169,8 @@
         const { useState, useEffect, useRef } = React;
 
         // ============ VERSIONE APP ============
-        const APP_VERSION = '9.6';
-        const APP_BUILD_DATE = '21/04/2026 15:34';
+        const APP_VERSION = '9.7';
+        const APP_BUILD_DATE = '21/04/2026 15:42';
 
 
 
@@ -3057,7 +3057,7 @@
                             alignItems: 'center', justifyContent: 'center', color: 'white'
                         }}>
                             <div style={{ fontSize: '48px', marginBottom: '16px' }}>💰</div>
-                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 9.6</div>
+                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 9.7</div>
                             <div style={{ fontSize: '13px', marginTop: '8px', opacity: 0.7 }}>Caricamento...</div>
                         </div>
                     )}
@@ -4895,9 +4895,9 @@
                             </button>
                         </div>
 
-                        <form onSubmit={handleSubmit} style={{ padding:'16px', overflowY:'auto' }}>
+                        <form onSubmit={handleSubmit} style={{ padding:'16px' }}>
 
-                            {/* Importo grande */}
+                            {/* Importo grande centrato */}
                             <div style={{ marginBottom:'12px', borderBottom:'2px solid #f0f0f0', paddingBottom:'12px' }}>
                                 <input
                                     type="number" step="0.01" inputMode="decimal"
@@ -4928,7 +4928,7 @@
 
                             {/* Categoria selezionata (breadcrumb) */}
                             {category && selectedCatInfo && (
-                                <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'8px',
+                                <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'10px',
                                     padding:'6px 12px', background: selectedCatInfo.color + '18',
                                     borderRadius:'20px', width:'fit-content' }}>
                                     <span>{selectedCatInfo.icon}</span>
@@ -4940,7 +4940,7 @@
                                 </div>
                             )}
 
-                            {/* Categorie padre — su più righe (wrap) */}
+                            {/* Categorie padre — su più righe */}
                             <div style={{ display:'flex', flexWrap:'wrap', gap:'8px', marginBottom:'8px' }}>
                                 {tree.filter(p => !p.archived).map(parent => {
                                     const isSelected = selectedParentId === parent.id;
@@ -4948,13 +4948,13 @@
                                         <button key={parent.id} type="button"
                                             onClick={() => selectParent(parent)}
                                             style={{
-                                                display:'flex', alignItems:'center', gap:'6px',
+                                                flexShrink:0, display:'flex', alignItems:'center', gap:'6px',
                                                 padding:'7px 14px', borderRadius:'20px', border:'2px solid',
                                                 borderColor: isSelected ? parent.color : '#e0e0e0',
                                                 background: isSelected ? parent.color : 'white',
                                                 color: isSelected ? 'white' : '#444',
                                                 cursor:'pointer', fontSize:'13px', fontWeight: isSelected ? '700' : '400',
-                                                transition:'all 0.15s'
+                                                whiteSpace:'nowrap', transition:'all 0.15s'
                                             }}>
                                             <span style={{ fontSize:'16px' }}>{parent.icon}</span>
                                             {parent.name}
@@ -4966,7 +4966,7 @@
                                 })}
                             </div>
 
-                            {/* Sottocategorie — su più righe (wrap) */}
+                            {/* Sottocategorie — su più righe */}
                             {subcats.length > 0 && (
                                 <div style={{ display:'flex', flexWrap:'wrap', gap:'6px',
                                     marginBottom:'8px', paddingLeft:'8px' }}>
@@ -5043,7 +5043,7 @@
                                     background:'transparent', marginBottom:'12px', boxSizing:'border-box' }}
                             />
 
-                            {/* Data + Extra toggle su stessa riga */}
+                            {/* Data + Extra toggle */}
                             <div style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between', marginBottom:'14px', gap:'10px' }}>
                                 <div style={{ flex:1 }}>
                                     <div style={{ fontSize:'11px', fontWeight:'700', color:'#999', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:'5px' }}>Data</div>
@@ -7726,7 +7726,7 @@
                     }}>
                         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                             <div style={{ fontSize: '48px', marginBottom: '8px' }}>💰</div>
-                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 9.6</h2>
+                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 9.7</h2>
                             <p style={{ margin: '6px 0 0', color: '#888', fontSize: '14px' }}>
                                 {isSignup ? 'Crea un account' : 'Accedi per sincronizzare i dati'}
                             </p>
