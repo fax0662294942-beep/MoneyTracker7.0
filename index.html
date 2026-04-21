@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#4CAF50">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>MoneyTracker 9.4 - Gestione Spese</title>
+    <title>MoneyTracker 9.5 - Gestione Spese</title>
     <link rel="manifest" href="manifest.json">
     <script>
         // Registra Service Worker per funzionamento offline
@@ -1048,21 +1048,26 @@
             if (!window.FB_READY || !uid) return;
             const { db, doc, setDoc } = window.FB;
             try {
-                // Salva anche i wallet (conti bancari) per ogni profilo
+                // Wallet per ogni profilo
                 const walletsByProfile = {};
                 accounts.forEach(function(acc) {
-                    const key = 'customTransactionAccounts_' + acc.id;
-                    const stored = localStorage.getItem(key);
+                    const stored = localStorage.getItem('customTransactionAccounts_' + acc.id);
                     if (stored) {
                         try { walletsByProfile[acc.id] = JSON.parse(stored); } catch(e) {}
                     }
                 });
-                await setDoc(doc(db, 'users', uid), {
+                // Categorie e tag (globali)
+                const catsRaw = localStorage.getItem('customCategories_v2');
+                const tagsRaw = localStorage.getItem('moneyTrackerTags');
+                const payload = {
                     accounts: accounts,
                     activeAccountId: activeAccountId,
                     walletsByProfile: walletsByProfile,
                     updatedAt: Date.now()
-                }, { merge: true });
+                };
+                if (catsRaw) { try { payload.categories = JSON.parse(catsRaw); } catch(e) {} }
+                if (tagsRaw) { try { payload.tags = JSON.parse(tagsRaw); } catch(e) {} }
+                await setDoc(doc(db, 'users', uid), payload, { merge: true });
             } catch(e) {
                 console.error('syncAccountsToFirestore error:', e);
             }
@@ -1164,8 +1169,8 @@
         const { useState, useEffect, useRef } = React;
 
         // ============ VERSIONE APP ============
-        const APP_VERSION = '9.4';
-        const APP_BUILD_DATE = '20/04/2026 19:45';
+        const APP_VERSION = '9.5';
+        const APP_BUILD_DATE = '21/04/2026 15:18';
 
 
 
@@ -1217,6 +1222,14 @@
         
         const saveCategoriestoStorage = (cats) => {
             localStorage.setItem('customCategories_v2', JSON.stringify(cats));
+            // Sync su Firestore in background
+            if (window.FB_READY && window.FB?.auth?.currentUser) {
+                const uid = window.FB.auth.currentUser.uid;
+                const allProfiles = JSON.parse(localStorage.getItem('moneyTrackerAccounts') || '[]');
+                window.syncAccountsToFirestore(uid, allProfiles,
+                    localStorage.getItem('moneyTrackerActiveAccount')
+                ).catch(e => console.error('categories sync error:', e));
+            }
         };
 
         // Emoji palette per selezione rapida
@@ -1310,6 +1323,14 @@
 
         const saveTagsToStorage = (tags) => {
             localStorage.setItem('moneyTrackerTags', JSON.stringify(tags));
+            // Sync su Firestore in background
+            if (window.FB_READY && window.FB?.auth?.currentUser) {
+                const uid = window.FB.auth.currentUser.uid;
+                const allProfiles = JSON.parse(localStorage.getItem('moneyTrackerAccounts') || '[]');
+                window.syncAccountsToFirestore(uid, allProfiles,
+                    localStorage.getItem('moneyTrackerActiveAccount')
+                ).catch(e => console.error('tags sync error:', e));
+            }
         };
 
         const getOrCreateTag = (name) => {
@@ -1479,7 +1500,7 @@
                             localStorage.setItem('moneyTrackerAccounts', JSON.stringify(data.accounts));
                             localStorage.setItem('moneyTrackerActiveAccount', activeId);
 
-                            // ── RIPRISTINA WALLET (conti bancari) ──
+                            // ── RIPRISTINA WALLET ──
                             if (data.walletsByProfile) {
                                 Object.keys(data.walletsByProfile).forEach(profileId => {
                                     const wallets = data.walletsByProfile[profileId];
@@ -1490,6 +1511,16 @@
                                         }
                                     }
                                 });
+                            }
+
+                            // ── RIPRISTINA CATEGORIE ──
+                            if (data.categories && !localStorage.getItem('customCategories_v2')) {
+                                localStorage.setItem('customCategories_v2', JSON.stringify(data.categories));
+                            }
+
+                            // ── RIPRISTINA TAG ──
+                            if (data.tags && !localStorage.getItem('moneyTrackerTags')) {
+                                localStorage.setItem('moneyTrackerTags', JSON.stringify(data.tags));
                             }
 
                             // ── CARICA TRANSAZIONI DA FIRESTORE SUBITO ──
@@ -3026,7 +3057,7 @@
                             alignItems: 'center', justifyContent: 'center', color: 'white'
                         }}>
                             <div style={{ fontSize: '48px', marginBottom: '16px' }}>💰</div>
-                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 9.4</div>
+                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 9.5</div>
                             <div style={{ fontSize: '13px', marginTop: '8px', opacity: 0.7 }}>Caricamento...</div>
                         </div>
                     )}
@@ -7685,7 +7716,7 @@
                     }}>
                         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                             <div style={{ fontSize: '48px', marginBottom: '8px' }}>💰</div>
-                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 9.4</h2>
+                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 9.5</h2>
                             <p style={{ margin: '6px 0 0', color: '#888', fontSize: '14px' }}>
                                 {isSignup ? 'Crea un account' : 'Accedi per sincronizzare i dati'}
                             </p>
