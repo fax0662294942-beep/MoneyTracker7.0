@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#4CAF50">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>MoneyTracker 10.2 - Gestione Spese</title>
+    <title>MoneyTracker 10.3 - Gestione Spese</title>
     <link rel="manifest" href="manifest.json">
     <script>
         // Registra Service Worker per funzionamento offline
@@ -1169,8 +1169,8 @@
         const { useState, useEffect, useRef } = React;
 
         // ============ VERSIONE APP ============
-        const APP_VERSION = '10.2';
-        const APP_BUILD_DATE = '27/04/2026 05:09';
+        const APP_VERSION = '10.3';
+        const APP_BUILD_DATE = '27/04/2026 08:54';
 
 
 
@@ -3087,7 +3087,7 @@
                             alignItems: 'center', justifyContent: 'center', color: 'white'
                         }}>
                             <div style={{ fontSize: '48px', marginBottom: '16px' }}>💰</div>
-                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 10.2</div>
+                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 10.3</div>
                             <div style={{ fontSize: '13px', marginTop: '8px', opacity: 0.7 }}>Caricamento...</div>
                         </div>
                     )}
@@ -3977,8 +3977,11 @@
             // Sposta conto su/giù con bottoni ▲ ▼
             const moveAccount = (id, dir) => {
                 const all = getCustomTransactionAccounts();
-                // Opera solo sui conti visibili (non archiviati) per indici coerenti con la UI
-                const visible = all.filter(a => !a.archived);
+                // Normalizza order se mancante — usa indice array come fallback
+                all.forEach((a, i) => { if (a.order === undefined || a.order === null) a.order = i; });
+
+                const visible = all.filter(a => !a.archived)
+                    .sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
                 const idx = visible.findIndex(a => a.id === id);
                 if (idx < 0) return;
                 const newIdx = idx + dir;
@@ -3986,7 +3989,7 @@
                 const newVisible = [...visible];
                 const [removed] = newVisible.splice(idx, 1);
                 newVisible.splice(newIdx, 0, removed);
-                // Ricostruisce array completo preservando archiviati in fondo
+                // Riassegna order sequenziale 0,1,2...
                 const archived = all.filter(a => a.archived);
                 const newOrder = [...newVisible, ...archived];
                 newOrder.forEach((a, i) => { a.order = i; });
@@ -7831,7 +7834,7 @@
                     }}>
                         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                             <div style={{ fontSize: '48px', marginBottom: '8px' }}>💰</div>
-                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 10.2</h2>
+                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 10.3</h2>
                             <p style={{ margin: '6px 0 0', color: '#888', fontSize: '14px' }}>
                                 {isSignup ? 'Crea un account' : 'Accedi per sincronizzare i dati'}
                             </p>
