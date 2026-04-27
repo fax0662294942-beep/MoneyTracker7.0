@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#4CAF50">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>MoneyTracker 10.0 - Gestione Spese</title>
+    <title>MoneyTracker 10.1 - Gestione Spese</title>
     <link rel="manifest" href="manifest.json">
     <script>
         // Registra Service Worker per funzionamento offline
@@ -1169,8 +1169,8 @@
         const { useState, useEffect, useRef } = React;
 
         // ============ VERSIONE APP ============
-        const APP_VERSION = '10.0';
-        const APP_BUILD_DATE = '22/04/2026 12:27';
+        const APP_VERSION = '10.1';
+        const APP_BUILD_DATE = '26/04/2026 20:22';
 
 
 
@@ -1839,14 +1839,20 @@
 
             // Filtra transazioni per conto
             const getFilteredTransactions = () => {
-                if (selectedAccount === 'all') {
-                    return transactions;
-                }
-                return transactions.filter(t => t.account === selectedAccount);
+                const base = selectedAccount === 'all'
+                    ? transactions
+                    : transactions.filter(t => t.account === selectedAccount);
+                // Ordine decrescente per data (più recente prima)
+                return [...base].sort((a, b) => new Date(b.date) - new Date(a.date));
             };
 
             // Calcoli con filtro conto
             const filteredTransactions = getFilteredTransactions();
+
+            // Ultime 30 transazioni per il tab "Recenti" (ignora periodo e filtri)
+            const recentTransactions = [...transactions]
+                .sort((a, b) => new Date(b.date) - new Date(a.date))
+                .slice(0, 30);
 
             // Calcoli mensili con periodo personalizzato
             const getCurrentMonthTransactions = () => {
@@ -3081,7 +3087,7 @@
                             alignItems: 'center', justifyContent: 'center', color: 'white'
                         }}>
                             <div style={{ fontSize: '48px', marginBottom: '16px' }}>💰</div>
-                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 10.0</div>
+                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 10.1</div>
                             <div style={{ fontSize: '13px', marginTop: '8px', opacity: 0.7 }}>Caricamento...</div>
                         </div>
                     )}
@@ -3611,7 +3617,23 @@
                                 </div>
                                 
                                 {(() => {
-                                    let displayTransactions = periodTransactions;
+                                    // Tab "Recenti": ultime 30 transazioni indipendentemente da periodo/filtri
+                                    if (activeTab === 'recent') {
+                                        return recentTransactions.length === 0 ? (
+                                            <div className="empty-state">
+                                                <div className="empty-icon">📊</div>
+                                                <h3>Nessuna transazione</h3>
+                                            </div>
+                                        ) : (
+                                            <TransactionList
+                                                transactions={recentTransactions}
+                                                onDelete={deleteTransaction}
+                                                onEdit={editTransaction}
+                                                onLongPress={(t) => setEditingTransaction(t)}
+                                            />
+                                        );
+                                    }
+                                    let displayTransactions = periodTransactions.sort((a,b) => new Date(b.date) - new Date(a.date));
                                     if (categoryFilter) displayTransactions = displayTransactions.filter(t => t.category === categoryFilter);
                                     if (transfersOnlyFilter) displayTransactions = displayTransactions.filter(t => t.isTransfer);
                                     
@@ -7819,7 +7841,7 @@
                     }}>
                         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                             <div style={{ fontSize: '48px', marginBottom: '8px' }}>💰</div>
-                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 10.0</h2>
+                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 10.1</h2>
                             <p style={{ margin: '6px 0 0', color: '#888', fontSize: '14px' }}>
                                 {isSignup ? 'Crea un account' : 'Accedi per sincronizzare i dati'}
                             </p>
