@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#4CAF50">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>MoneyTracker 10.1 - Gestione Spese</title>
+    <title>MoneyTracker 10.2 - Gestione Spese</title>
     <link rel="manifest" href="manifest.json">
     <script>
         // Registra Service Worker per funzionamento offline
@@ -1169,8 +1169,8 @@
         const { useState, useEffect, useRef } = React;
 
         // ============ VERSIONE APP ============
-        const APP_VERSION = '10.1';
-        const APP_BUILD_DATE = '26/04/2026 20:22';
+        const APP_VERSION = '10.2';
+        const APP_BUILD_DATE = '27/04/2026 05:09';
 
 
 
@@ -3087,7 +3087,7 @@
                             alignItems: 'center', justifyContent: 'center', color: 'white'
                         }}>
                             <div style={{ fontSize: '48px', marginBottom: '16px' }}>💰</div>
-                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 10.1</div>
+                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 10.2</div>
                             <div style={{ fontSize: '13px', marginTop: '8px', opacity: 0.7 }}>Caricamento...</div>
                         </div>
                     )}
@@ -3977,43 +3977,27 @@
             // Sposta conto su/giù con bottoni ▲ ▼
             const moveAccount = (id, dir) => {
                 const all = getCustomTransactionAccounts();
-                const idx = all.findIndex(a => a.id === id);
+                // Opera solo sui conti visibili (non archiviati) per indici coerenti con la UI
+                const visible = all.filter(a => !a.archived);
+                const idx = visible.findIndex(a => a.id === id);
                 if (idx < 0) return;
                 const newIdx = idx + dir;
-                if (newIdx < 0 || newIdx >= all.length) return;
-                const newOrder = [...all];
-                const [removed] = newOrder.splice(idx, 1);
-                newOrder.splice(newIdx, 0, removed);
+                if (newIdx < 0 || newIdx >= visible.length) return;
+                const newVisible = [...visible];
+                const [removed] = newVisible.splice(idx, 1);
+                newVisible.splice(newIdx, 0, removed);
+                // Ricostruisce array completo preservando archiviati in fondo
+                const archived = all.filter(a => a.archived);
+                const newOrder = [...newVisible, ...archived];
                 newOrder.forEach((a, i) => { a.order = i; });
                 saveCustomTransactionAccounts(newOrder);
                 reload();
             };
-            // Touch drag
-            const handleTouchStart = (e, id) => { touchDrag.current = { active: true, id }; };
-            const handleTouchMove = (e) => {
-                if (!touchDrag.current.active) return;
-                e.preventDefault();
-                const el = document.elementFromPoint(e.touches[0].clientX, e.touches[0].clientY);
-                const card = el && el.closest('[data-accid]');
-                if (card) setDragOverId(card.dataset.accid);
-            };
-            const handleTouchEnd = () => {
-                if (touchDrag.current.active && dragOverId && touchDrag.current.id !== dragOverId) {
-                    const all = getCustomTransactionAccounts();
-                    const from = all.findIndex(a => a.id === touchDrag.current.id);
-                    const to = all.findIndex(a => a.id === dragOverId);
-                    if (from >= 0 && to >= 0) {
-                        const newOrder = [...all];
-                        const [removed] = newOrder.splice(from, 1);
-                        newOrder.splice(to, 0, removed);
-                        newOrder.forEach((a, i) => { a.order = i; });
-                        saveCustomTransactionAccounts(newOrder);
-                        reload();
-                    }
-                }
-                touchDrag.current = { active: false, id: null };
-                setDraggedId(null); setDragOverId(null);
-            };
+
+            // Touch drag rimosso — usare i bottoni ▲ ▼ che funzionano correttamente su mobile
+            const handleTouchStart = (e, id) => {};
+            const handleTouchMove = (e) => {};
+            const handleTouchEnd = () => { setDraggedId(null); setDragOverId(null); };
 
             const renderAccCard = (acc) => {
                 const saldo = getSaldo(acc.id);
@@ -4098,6 +4082,12 @@
             const AccContextMenu = () => {
                 if (!accMenu) return null;
                 const { acc, x, y } = accMenu;
+                // Stima altezza menu (~280px), apre sopra se troppo vicino al fondo
+                const menuH = 280;
+                const openAbove = y + menuH > window.innerHeight - 20;
+                const menuStyle = openAbove
+                    ? { bottom: (window.innerHeight - y) + 'px', top: 'auto' }
+                    : { top: y + 'px', bottom: 'auto' };
                 React.useEffect(() => {
                     const close = (e) => setAccMenu(null);
                     const timer = setTimeout(() => document.addEventListener('click', close, { once: true }), 100);
@@ -4111,7 +4101,7 @@
                     </button>
                 );
                 return (
-                    <div style={{ position:'fixed', top:y+'px', left:x+'px', transform:'translateX(-50%)', background:'white', borderRadius:'12px', boxShadow:'0 4px 20px rgba(0,0,0,0.25)', zIndex:10000, minWidth:'200px', overflow:'hidden', animation:'menuAppear 0.2s ease-out' }}
+                    <div style={{ position:'fixed', ...menuStyle, left:x+'px', transform:'translateX(-50%)', background:'white', borderRadius:'12px', boxShadow:'0 4px 20px rgba(0,0,0,0.25)', zIndex:10000, minWidth:'200px', overflow:'hidden', animation:'menuAppear 0.2s ease-out' }}
                         onClick={(e) => e.stopPropagation()}>
                         <div style={{ padding:'12px 16px', borderBottom:'1px solid #f0f0f0', background:(acc.color||'#667eea')+'20', display:'flex', alignItems:'center', gap:'10px' }}>
                             <span style={{fontSize:'24px'}}>{acc.icon||'🏦'}</span>
@@ -7841,7 +7831,7 @@
                     }}>
                         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                             <div style={{ fontSize: '48px', marginBottom: '8px' }}>💰</div>
-                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 10.1</h2>
+                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 10.2</h2>
                             <p style={{ margin: '6px 0 0', color: '#888', fontSize: '14px' }}>
                                 {isSignup ? 'Crea un account' : 'Accedi per sincronizzare i dati'}
                             </p>
