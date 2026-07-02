@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#4CAF50">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>MoneyTracker 10.7 - Gestione Spese</title>
+    <title>MoneyTracker 10.4 - Gestione Spese</title>
     <link rel="manifest" href="manifest.json">
     <script>
         // Registra Service Worker per funzionamento offline
@@ -18,9 +18,9 @@
             });
         }
     </script>
-    <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone@7.23.5/babel.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
 
@@ -48,7 +48,6 @@
             appId: "1:172431561795:web:ae6ef3e9c2bbdfeb2d70f6"
         };
 
-        window.MT_FIREBASE_PROJECT_ID = firebaseConfig.projectId;
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
@@ -1068,7 +1067,8 @@
                 };
                 if (catsRaw) { try { payload.categories = JSON.parse(catsRaw); } catch(e) {} }
                 if (tagsRaw) { try { payload.tags = JSON.parse(tagsRaw); } catch(e) {} }
-                // v10.7: nessuna chiave AI salvata nel frontend. La chiave OpenAI resta solo nella Firebase Function.
+                // Gemini API key (salvata in memoria React, non in localStorage per sicurezza)
+                if (window._geminiApiKey) { payload.geminiApiKey = window._geminiApiKey; }
                 await setDoc(doc(db, 'users', uid), payload, { merge: true });
             } catch(e) {
                 console.error('syncAccountsToFirestore error:', e);
@@ -1171,8 +1171,8 @@
         const { useState, useEffect, useRef } = React;
 
         // ============ VERSIONE APP ============
-        const APP_VERSION = '10.7';
-        const APP_BUILD_DATE = '19/06/2026 14:21';
+        const APP_VERSION = '10.4';
+        const APP_BUILD_DATE = '15/06/2026 11:59';
 
 
 
@@ -1235,8 +1235,8 @@
         };
 
         // Emoji palette per selezione rapida
-        const EXPENSE_EMOJIS = ['🛒','🍕','🚗','⛽','💡','🏠','🛍️','⚕️','🎬','✈️','🏖️','📚','💼','👨‍👩‍👧','😊','📦','🍺','☕','🎮','📱','🚌','🏋️','🐕','🧴','👔','🎓','🔧','🏥','⚽','🎵','🎨','📷','🌴','❄️','🔥'];
-        const INCOME_EMOJIS = ['💼','💻','📈','💳','🎁','💰','🏦','🤝','🎯','🌟','💎','🏆','🔑','💵','🎪'];
+        const EXPENSE_EMOJIS = ['🛒','🍕','🍔','🍟','🌮','🌯','🍣','🍜','🍝','🍛','🥗','🥩','🐟','🥪','🍱','🍳','☕','🍺','🍷','🥂','🧃','🧋','🏠','🏡','🏢','🛋️','🛏️','🚿','🪴','💡','💧','🔥','❄️','🧹','🔑','🪟','🚪','🚗','🚕','🚙','🚌','🏎️','✈️','🚂','🚢','🛵','🏍️','🚲','🛴','⛽','🅿️','🚦','🛍️','👔','👗','👠','👟','👜','🎒','🧢','👒','🧣','🧤','💍','⌚','🕶️','👓','🏥','💊','💉','🩺','🦷','🧘','🏋️','🚴','🏊','⚽','🎾','🏀','🥊','🧴','🧼','💆','🐕','🐈','🎬','🎮','🎵','🎨','📷','📸','🎭','🎪','🎡','🏖️','🌴','🏕️','🎯','🎲','📖','📚','🎓','✏️','📝','💻','🖥️','📱','📋','📊','📈','💼','🏆','💳','🏦','📑','🧾','⚖️','🔐','📦','🔧','🔨','⚙️','🛠️','👶','🎂','🎁','💝','❤️','🏫','⛪','🌍','🗺️','🏔️','🏝️','🌊','🌅','🌿','🍀','🌸','🌺','😊','💡','⭐','🌟','✨','🔔','🎗️','🏅','🎀','🚨','⚠️'];
+        const INCOME_EMOJIS = ['💼','💻','📈','📉','💳','🎁','💰','💵','💶','💷','🏦','🤝','🎯','🌟','💎','🏆','🔑','🪙','💹','📊','🏪','🏭','🚀','🌐','⚡','🔋','🌱','♻️','🎪','🎭','🖥️','📱','🤖','🧠','💡','🔬','🎓','📜','✍️','📝'];
         const COLORS_PALETTE = ['#FF6B6B','#FF8E8E','#4ECDC4','#5ED5D5','#4DA6FF','#3D8BFF','#95E1D3','#AA96DA','#FCBAD3','#FFD93D','#FFF176','#A8D8EA','#8D6E63','#CE93D8','#FFB74D','#B0BEC5','#6BCF7F','#4CAF50','#8BC34A','#9CCC65','#AED581','#C5E1A5','#F06292','#BA68C8','#64B5F6','#4DB6AC','#81C784','#FFF176','#FF8A65','#A1887F'];
 
         // Conti disponibili base
@@ -1397,7 +1397,7 @@
             const [showDebtModal, setShowDebtModal] = useState(false);   // false | debt object (edit) | 'new'
             const [reauthAction, setReauthAction] = useState(null);
             const [syncStatus, setSyncStatus] = useState('idle'); // idle|syncing|synced|error
-            const [receiptScannerEnabled, setReceiptScannerEnabled] = useState(true);
+            const [geminiApiKey, setGeminiApiKey] = useState('');
             const [showReceiptScan, setShowReceiptScan] = useState(false);
             
             // ============ DATI ACCOUNT CORRENTE ============
@@ -1524,7 +1524,10 @@
                                 localStorage.setItem('moneyTrackerTags', JSON.stringify(data.tags));
                             }
 
-                            // v10.7: la scansione scontrini usa una Firebase Function con chiave OpenAI lato server.
+                            // ── RIPRISTINA GEMINI API KEY ──
+                            if (data.geminiApiKey) {
+                                setGeminiApiKey(data.geminiApiKey);
+                            }
 
                             // ── CARICA TRANSAZIONI — Firestore vince sempre ──
                             if (activeId) {
@@ -2028,6 +2031,14 @@
             };
 
             const addTransaction = async (transaction) => {
+                // Salva ultimo conto usato per categoria
+                if (transaction.category && transaction.account) {
+                    try {
+                        var _map = JSON.parse(localStorage.getItem('lastAccountByCategory') || '{}');
+                        _map[transaction.category] = transaction.account;
+                        localStorage.setItem('lastAccountByCategory', JSON.stringify(_map));
+                    } catch(e) {}
+                }
                 // Usa ref invece di transactions (evita stale closure con aggiunte rapide)
                 const current = transactionsRef.current;
                 const newTransactions = [transaction, ...current];
@@ -3113,7 +3124,7 @@
                             alignItems: 'center', justifyContent: 'center', color: 'white'
                         }}>
                             <div style={{ fontSize: '48px', marginBottom: '16px' }}>💰</div>
-                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 10.7</div>
+                            <div style={{ fontSize: '18px', fontWeight: '600' }}>MoneyTracker 10.4</div>
                             <div style={{ fontSize: '13px', marginTop: '8px', opacity: 0.7 }}>Caricamento...</div>
                         </div>
                     )}
@@ -3760,8 +3771,8 @@
                         </button>
                     )}
 
-                    {/* Bottone 📷 scansione scontrino — v10.7 via OpenAI/Firebase Function */}
-                    {receiptScannerEnabled && (
+                    {/* Bottone 📷 scansione scontrino — visibile solo se Gemini key configurata */}
+                    {geminiApiKey && (
                         <button
                             className="fab"
                             onClick={() => setShowReceiptScan(true)}
@@ -3897,8 +3908,17 @@
                             userRef={userRef}
                             sharedProfiles={sharedProfiles}
                             onReauth={(label, action) => setReauthAction({ label, onConfirmed: action })}
-                            receiptScannerEnabled={receiptScannerEnabled}
-                            onToggleReceiptScanner={setReceiptScannerEnabled}
+                            geminiApiKey={geminiApiKey}
+                            onSaveGeminiKey={(key) => {
+                                setGeminiApiKey(key);
+                                window._geminiApiKey = key;
+                                if (window.FB_READY && window.FB?.auth?.currentUser) {
+                                    const uid = window.FB.auth.currentUser.uid;
+                                    const { db, doc, setDoc } = window.FB;
+                                    setDoc(doc(db, 'users', uid), { geminiApiKey: key }, { merge: true })
+                                        .catch(e => console.error('Gemini key save:', e));
+                                }
+                            }}
                         />
                     )}
 
@@ -3907,6 +3927,7 @@
                         <ReceiptScanModal
                             onClose={() => setShowReceiptScan(false)}
                             onExtracted={handleReceiptExtracted}
+                            geminiApiKey={geminiApiKey}
                         />
                     )}
 
@@ -4827,7 +4848,14 @@
             const allAccounts = getAccountsFilter().filter(a => a.id !== 'all');
             const allCategories = getCategoriesFromStorage();
             const allTags = getTagsFromStorage();
-            const _defaultAccount = preselectedAccount || allAccounts[0]?.id || 'cash';
+            const getLastAccountForCategory = function(catId) {
+                if (!catId) return null;
+                try {
+                    var map = JSON.parse(localStorage.getItem('lastAccountByCategory') || '{}');
+                    return map[catId] || null;
+                } catch(e) { return null; }
+            };
+            const _defaultAccount = preselectedAccount || getLastAccountForCategory(preselectedCategory) || allAccounts[0]?.id || 'cash';
 
             const [type, setType] = useState('expense');
             const [amount, setAmount] = useState(receiptPreFill?.amount ? String(receiptPreFill.amount) : '');
@@ -6398,29 +6426,41 @@
             );
         }
 
-        // ============ OPENAI RECEIPT SCANNER SECTION ============
-        function ReceiptScannerSection({ receiptScannerEnabled, onToggleReceiptScanner }) {
+        // ============ GEMINI KEY SECTION ============
+        function GeminiKeySection({ geminiApiKey, onSaveGeminiKey }) {
+            const [key, setKey] = React.useState(geminiApiKey || '');
+            const [saved, setSaved] = React.useState(false);
+            const save = () => {
+                onSaveGeminiKey(key.trim());
+                setSaved(true);
+                setTimeout(() => setSaved(false), 2000);
+            };
             return (
                 <div style={{ marginBottom: '16px', padding: '14px', background: '#f0f4ff', borderRadius: '12px', border: '1px solid #667eea33' }}>
                     <div style={{ fontWeight: '700', fontSize: '14px', marginBottom: '6px', color: '#667eea' }}>
-                        📷 Scansione Scontrini — OpenAI
+                        📷 Scansione Scontrini — Gemini AI
                     </div>
-                    <div style={{ fontSize: '12px', color: '#666', marginBottom: '10px', lineHeight:'1.45' }}>
-                        Da questa versione la chiave API non viene più inserita o salvata nell'app. La foto viene inviata a una Firebase Function, che usa OpenAI lato server e restituisce solo i dati strutturati dello scontrino.
+                    <div style={{ fontSize: '12px', color: '#666', marginBottom: '10px' }}>
+                        Inserisci la tua chiave API Gemini (Google AI Studio → aistudio.google.com) per abilitare la scansione automatica degli scontrini con la fotocamera.
                     </div>
-                    <label style={{ display:'flex', alignItems:'center', gap:'8px', fontSize:'13px', fontWeight:'700', color:'#333' }}>
-                        <input type="checkbox" checked={!!receiptScannerEnabled} onChange={e => onToggleReceiptScanner(e.target.checked)} />
-                        Abilita pulsante scansione scontrini
-                    </label>
-                    <div style={{ fontSize:'11px', color:'#777', marginTop:'8px' }}>
-                        Nota tecnica: configura OPENAI_API_KEY nelle Firebase Functions prima del deploy.
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                        <input type="password" value={key} onChange={e => setKey(e.target.value)}
+                            placeholder="AIza..."
+                            style={{ flex:1, padding:'8px 12px', borderRadius:'8px', border:'1px solid #ccc', fontSize:'13px', outline:'none' }} />
+                        <button type="button" onClick={save}
+                            style={{ padding:'8px 14px', borderRadius:'8px', border:'none',
+                                background: saved ? '#4caf50' : '#667eea', color:'white',
+                                fontWeight:'700', cursor:'pointer', fontSize:'13px', whiteSpace:'nowrap' }}>
+                            {saved ? '✅ Salvato' : '💾 Salva'}
+                        </button>
                     </div>
+                    {geminiApiKey && <div style={{ fontSize:'11px', color:'#4caf50', marginTop:'6px' }}>✅ Chiave configurata</div>}
                 </div>
             );
         }
 
         // ============ RECEIPT SCAN MODAL ============
-        function ReceiptScanModal({ onClose, onExtracted }) {
+        function ReceiptScanModal({ onClose, onExtracted, geminiApiKey }) {
             const [status, setStatus] = React.useState('idle'); // idle|scanning|success|error
             const [preview, setPreview] = React.useState(null);
             const [result, setResult] = React.useState(null);
@@ -6444,28 +6484,30 @@
                     const mm = String(today.getMonth()+1).padStart(2,'0');
                     const yyyy = today.getFullYear();
                     const todayStr = `${dd}/${mm}/${yyyy}`;
-                    const endpoint = window.MT_RECEIPT_SCAN_ENDPOINT ||
-                        `https://us-central1-${window.MT_FIREBASE_PROJECT_ID}.cloudfunctions.net/scanReceiptOpenAI`;
-                    const token = window.FB?.auth?.currentUser
-                        ? await window.FB.auth.currentUser.getIdToken()
-                        : null;
-                    if (!token) throw new Error('Devi essere connesso per usare la scansione scontrini.');
-
-                    const resp = await fetch(endpoint, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`
-                        },
-                        body: JSON.stringify({
-                            imageBase64: base64,
-                            mimeType: file.type || 'image/jpeg',
-                            today: todayStr
-                        })
-                    });
+                    const resp = await fetch(
+                        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`,
+                        {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                contents: [{ parts: [
+                                    { inline_data: { mime_type: file.type || 'image/jpeg', data: base64 } },
+                                    { text: `Analizza questo scontrino italiano. Rispondi SOLO con JSON valido (nessun markdown, nessun backtick), esempio: {"amount":15.50,"date":"21/04/2026","store":"Carrefour","category":"spesa","note":"spesa supermercato"}
+Campi:
+- amount: totale (numero)
+- date: data scontrino in formato gg/mm/aaaa (se non visibile usa ${todayStr})
+- store: nome negozio
+- category: una tra spesa|ristoranti|carburante|salute|shopping|trasporti|altro
+- note: descrizione breve` }
+                                ]}],
+                                generationConfig: { temperature: 0.1, maxOutputTokens: 200 }
+                            })
+                        }
+                    );
                     const data = await resp.json();
-                    if (!resp.ok || data.error) throw new Error(data.error || data.message || 'Errore analisi scontrino');
-                    const parsed = data;
+                    if (data.error) throw new Error(data.error.message);
+                    const text = (data.candidates?.[0]?.content?.parts?.[0]?.text || '').replace(/```[a-z]*/g,'').replace(/```/g,'').trim();
+                    const parsed = JSON.parse(text);
                     setResult(parsed);
                     setStatus('success');
                 } catch(e) {
@@ -6485,7 +6527,7 @@
                             {status === 'idle' && (
                                 <div>
                                     <p style={{ color:'#666', fontSize:'14px', marginBottom:'16px' }}>
-                                        Scatta una foto allo scontrino oppure carica un'immagine dalla galleria. OpenAI estrarrà automaticamente importo, data e categoria.
+                                        Scatta una foto allo scontrino oppure carica un'immagine dalla galleria. Gemini AI estrarrà automaticamente importo, data e categoria.
                                     </p>
                                     <input ref={fileRef} type="file" accept="image/*" capture="environment"
                                         style={{ display:'none' }} onChange={handleFile} />
@@ -6506,7 +6548,7 @@
                                     {preview && <img src={preview} style={{ width:'100%', maxHeight:'200px', objectFit:'contain', borderRadius:'8px', marginBottom:'16px' }} />}
                                     <div style={{ fontSize:'32px', animation:'spin 1s linear infinite', display:'inline-block' }}>🔄</div>
                                     <p style={{ color:'#667eea', fontWeight:'700', marginTop:'12px' }}>Analisi in corso...</p>
-                                    <p style={{ color:'#999', fontSize:'12px' }}>OpenAI sta leggendo lo scontrino</p>
+                                    <p style={{ color:'#999', fontSize:'12px' }}>Gemini AI sta leggendo lo scontrino</p>
                                 </div>
                             )}
                             {status === 'error' && (
@@ -6563,7 +6605,7 @@
             );
         }
 
-        function SettingsModal({ onClose, settings, onSave, handleFileUpload, accounts, activeAccountId, getActiveAccount, deleteAccount, setShowSQLiteImportModal, setShowManageCategoriesModal, setShowManageAccountsModal, onExportCSV, onExportBackup, onImportBackup, userRef, sharedProfiles, onReauth, receiptScannerEnabled, onToggleReceiptScanner }) {
+        function SettingsModal({ onClose, settings, onSave, handleFileUpload, accounts, activeAccountId, getActiveAccount, deleteAccount, setShowSQLiteImportModal, setShowManageCategoriesModal, setShowManageAccountsModal, onExportCSV, onExportBackup, onImportBackup, userRef, sharedProfiles, onReauth, geminiApiKey, onSaveGeminiKey }) {
             const [monthStartDay, setMonthStartDay] = useState(settings.monthStartDay);
 
             const handleSubmit = (e) => {
@@ -6915,10 +6957,10 @@
                                 </div>
                             </div>
 
-                            {/* ── Scanner scontrini OpenAI ── */}
-                            <ReceiptScannerSection
-                                receiptScannerEnabled={receiptScannerEnabled}
-                                onToggleReceiptScanner={onToggleReceiptScanner}
+                            {/* ── Gemini API Key (per scansione scontrini) ── */}
+                            <GeminiKeySection
+                                geminiApiKey={geminiApiKey}
+                                onSaveGeminiKey={onSaveGeminiKey}
                             />
 
                             {/* ── Info Versione ── */}
@@ -8054,7 +8096,7 @@
                     }}>
                         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
                             <div style={{ fontSize: '48px', marginBottom: '8px' }}>💰</div>
-                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 10.7</h2>
+                            <h2 style={{ margin: 0, color: '#333', fontSize: '22px' }}>MoneyTracker 10.4</h2>
                             <p style={{ margin: '6px 0 0', color: '#888', fontSize: '14px' }}>
                                 {isSignup ? 'Crea un account' : 'Accedi per sincronizzare i dati'}
                             </p>
