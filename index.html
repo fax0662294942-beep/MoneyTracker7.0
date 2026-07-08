@@ -6448,14 +6448,83 @@
         }
 
         // ============ RECEIPT SCAN MODAL ============
-        // ===== CROP MODAL =====
+        // ===== UTILITY: EXIF ORIENTATION =====
+        var detectExifAngle = async function(src) {
+            try {
+                var resp = await fetch(src);
+                var buf = await resp.arrayBuffer();
+                var view = new DataView(buf);
+                if (view.getUint16(0) !== 0xFFD8) return 0;
+                var offset = 2;
+                while (offset < Math.min(view.byteLength, 65536)) {
+                    var marker = view.getUint16(offset);
+                    if (marker === 0xFFE1) {
+                        var exifBase = offset + 10;
+                        var le = view.getUint16(exifBase) === 0x4949;
+                        var ifd = exifBase + view.getUint32(exifBase + 4, le);
+                        var n = view.getUint16(ifd, le);
+                        for (var i = 0; i < n; i++) {
+                            var e = ifd + 2 + i * 12;
+                            if (view.getUint16(e, le) === 0x0112) {
+                                var ori = view.getUint16(e + 8, le);
+                                if (ori === 3) return 180;
+                                if (ori === 6) return 90;
+                                if (ori === 8) return -90;
+                                return 0;
+                            }
+                        }
+                        break;
+                    }
+                    if ((marker & 0xFF00) !== 0xFF00) break;
+                    offset += 2 + view.getUint16(offset + 2);
+                }
+            } catch(e) {}
+            return 0;
+        };
+
+        var rotateAndCropImage = function(img, angleDeg, crop) {
+            return new Promise(function(resolve) {
+                var rad = angleDeg * Math.PI / 180;
+                var cos = Math.abs(Math.cos(rad));
+                var sin = Math.abs(Math.sin(rad));
+                var rw = Math.round(img.naturalWidth * cos + img.naturalHeight * sin);
+                var rh = Math.round(img.naturalWidth * sin + img.naturalHeight * cos);
+                var rot = document.createElement('canvas');
+                rot.width = rw; rot.height = rh;
+                var rctx = rot.getContext('2d');
+                rctx.translate(rw / 2, rh / 2);
+                rctx.rotate(rad);
+                rctx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
+                var cx = Math.round(rw * crop.x);
+                var cy = Math.round(rh * crop.y);
+                var cw = Math.round(rw * crop.w);
+                var ch = Math.round(rh * crop.h);
+                var out = document.createElement('canvas');
+                out.width = cw; out.height = ch;
+                out.getContext('2d').drawImage(rot, cx, cy, cw, ch, 0, 0, cw, ch);
+                out.toBlob(function(blob) { resolve(blob); }, 'image/jpeg', 0.93);
+            });
+        };
+
+        // ===== CROP + ROTATE MODAL =====
         function CropModal({ imageSrc, onCrop, onSkip }) {
-            var canvasRef = React.useRef(null);
-            var imgRef = React.useRef(null);
-            var [crop, setCrop] = React.useState({ x: 0.05, y: 0.05, w: 0.90, h: 0.90 });
+            var [angle, setAngle] = React.useState(0);
+            var [fineAngle, setFineAngle] = React.useState(0);
+            var [crop, setCrop] = React.useState({ x: 0.04, y: 0.04, w: 0.92, h: 0.92 });
             var [dragging, setDragging] = React.useState(null);
             var [imgLoaded, setImgLoaded] = React.useState(false);
+            var [autoDetecting, setAutoDetecting] = React.useState(true);
             var containerRef = React.useRef(null);
+            var imgRef = React.useRef(null);
+            var totalAngle = angle + fineAngle;
+
+            React.useEffect(function() {
+                setAutoDetecting(true);
+                detectExifAngle(imageSrc).then(function(deg) {
+                    if (deg !== 0) setAngle(deg);
+                    setAutoDetecting(false);
+                });
+            }, [imageSrc]);
 
             var getRelPos = function(e, el) {
                 var rect = el.getBoundingClientRect();
@@ -6467,8 +6536,7 @@
             };
 
             var handleStart = function(e, handle) {
-                e.preventDefault();
-                e.stopPropagation();
+                e.preventDefault(); e.stopPropagation();
                 setDragging(handle);
             };
 
@@ -6478,26 +6546,25 @@
                 var pos = getRelPos(e, containerRef.current);
                 setCrop(function(c) {
                     var nx = c.x, ny = c.y, nw = c.w, nh = c.h;
-                    var min = 0.1;
+                    var min = 0.08;
                     if (dragging === 'tl') {
-                        var newX = Math.min(pos.x, c.x + c.w - min);
-                        var newY = Math.min(pos.y, c.y + c.h - min);
-                        nw = c.x + c.w - newX; nh = c.y + c.h - newY;
-                        nx = newX; ny = newY;
+                        var ex = Math.min(pos.x, c.x + c.w - min);
+                        var ey = Math.min(pos.y, c.y + c.h - min);
+                        nw = c.x + c.w - ex; nh = c.y + c.h - ey; nx = ex; ny = ey;
                     } else if (dragging === 'tr') {
-                        var newW = Math.max(min, pos.x - c.x);
-                        var newY = Math.min(pos.y, c.y + c.h - min);
-                        nw = newW; nh = c.y + c.h - newY; ny = newY;
+                        nw = Math.max(min, pos.x - c.x);
+                        var ey = Math.min(pos.y, c.y + c.h - min);
+                        nh = c.y + c.h - ey; ny = ey;
                     } else if (dragging === 'bl') {
-                        var newX = Math.min(pos.x, c.x + c.w - min);
-                        nw = c.x + c.w - newX; nx = newX;
+                        var ex = Math.min(pos.x, c.x + c.w - min);
+                        nw = c.x + c.w - ex; nx = ex;
                         nh = Math.max(min, pos.y - c.y);
                     } else if (dragging === 'br') {
                         nw = Math.max(min, pos.x - c.x);
                         nh = Math.max(min, pos.y - c.y);
                     } else if (dragging === 'move') {
-                        nx = Math.max(0, Math.min(1 - c.w, pos.x - c.w/2));
-                        ny = Math.max(0, Math.min(1 - c.h, pos.y - c.h/2));
+                        nx = Math.max(0, Math.min(1 - c.w, pos.x - c.w / 2));
+                        ny = Math.max(0, Math.min(1 - c.h, pos.y - c.h / 2));
                     }
                     return { x: Math.max(0, nx), y: Math.max(0, ny), w: Math.min(1 - nx, nw), h: Math.min(1 - ny, nh) };
                 });
@@ -6506,76 +6573,64 @@
             var handleEnd = function() { setDragging(null); };
 
             var doCrop = function() {
-                var img = imgRef.current;
-                if (!img) return;
-                var canvas = document.createElement('canvas');
-                var sw = Math.round(img.naturalWidth * crop.w);
-                var sh = Math.round(img.naturalHeight * crop.h);
-                canvas.width = sw;
-                canvas.height = sh;
-                var ctx = canvas.getContext('2d');
-                ctx.drawImage(img,
-                    Math.round(img.naturalWidth * crop.x),
-                    Math.round(img.naturalHeight * crop.y),
-                    sw, sh, 0, 0, sw, sh
-                );
-                canvas.toBlob(function(blob) { onCrop(blob); }, 'image/jpeg', 0.92);
+                if (!imgRef.current) return;
+                rotateAndCropImage(imgRef.current, totalAngle, crop).then(function(blob) {
+                    onCrop(blob);
+                });
             };
 
-            var hStyle = { position: 'absolute', width: '28px', height: '28px', background: 'white', border: '3px solid #667eea', borderRadius: '50%', transform: 'translate(-50%,-50%)', zIndex: 10, touchAction: 'none', cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.4)' };
+            var hStyle = { position:'absolute', width:'30px', height:'30px', background:'white', border:'3px solid #667eea', borderRadius:'50%', transform:'translate(-50%,-50%)', zIndex:10, touchAction:'none', cursor:'pointer', boxShadow:'0 2px 10px rgba(0,0,0,0.5)' };
+            var btnStyle = { padding:'8px 14px', borderRadius:'8px', border:'none', background:'rgba(255,255,255,0.18)', color:'white', cursor:'pointer', fontWeight:'700', fontSize:'20px', minWidth:'46px' };
 
             return (
-                <div style={{ position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.92)', zIndex:20000, display:'flex', flexDirection:'column' }}>
-                    <div style={{ padding:'12px 16px', color:'white', fontWeight:'800', fontSize:'15px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                        <span>✂️ Ritaglia scontrino</span>
-                        <span style={{ fontSize:'12px', opacity:0.7, fontWeight:'400' }}>Trascina gli angoli</span>
+                <div style={{ position:'fixed', top:0, left:0, right:0, bottom:0, background:'#111', zIndex:20000, display:'flex', flexDirection:'column' }}>
+                    <div style={{ padding:'10px 12px', background:'rgba(0,0,0,0.75)', display:'flex', alignItems:'center', gap:'8px' }}>
+                        <button style={btnStyle} onClick={function() { setAngle(function(a) { return a - 90; }); }}>&#8634;</button>
+                        <input type="range" min="-30" max="30" step="1" value={fineAngle}
+                            onChange={function(e) { setFineAngle(Number(e.target.value)); }}
+                            style={{ flex:1, accentColor:'#667eea' }} />
+                        <button style={btnStyle} onClick={function() { setAngle(function(a) { return a + 90; }); }}>&#8635;</button>
+                        <span style={{ color:'white', fontSize:'12px', minWidth:'38px', textAlign:'center' }}>{totalAngle}°</span>
+                        <button onClick={function() { setAngle(0); setFineAngle(0); }}
+                            style={{ padding:'6px 10px', borderRadius:'6px', border:'none', background:'rgba(255,255,255,0.2)', color:'white', cursor:'pointer', fontSize:'11px' }}>
+                            {autoDetecting ? '...' : 'Reset'}
+                        </button>
                     </div>
 
-                    <div ref={containerRef} style={{ flex:1, position:'relative', overflow:'hidden', touchAction:'none' }}
+                    <div ref={containerRef} style={{ flex:1, position:'relative', overflow:'hidden', touchAction:'none', display:'flex', alignItems:'center', justifyContent:'center' }}
                         onMouseMove={handleMove} onMouseUp={handleEnd}
                         onTouchMove={handleMove} onTouchEnd={handleEnd}>
 
                         <img ref={imgRef} src={imageSrc} onLoad={function() { setImgLoaded(true); }}
-                            style={{ width:'100%', height:'100%', objectFit:'contain', display:'block' }} />
+                            crossOrigin="anonymous"
+                            style={{ maxWidth:'100%', maxHeight:'100%', objectFit:'contain', display:'block',
+                                transform:'rotate('+totalAngle+'deg)', transition: dragging ? 'none' : 'transform 0.25s' }} />
 
                         {imgLoaded && (
                             <div style={{ position:'absolute', top:0, left:0, right:0, bottom:0 }}>
-                                {/* Overlay scuro fuori dalla selezione */}
-                                <div style={{ position:'absolute', top:0, left:0, right:0, height: (crop.y*100)+'%', background:'rgba(0,0,0,0.55)' }} />
-                                <div style={{ position:'absolute', bottom:0, left:0, right:0, height: ((1-crop.y-crop.h)*100)+'%', background:'rgba(0,0,0,0.55)' }} />
-                                <div style={{ position:'absolute', top:(crop.y*100)+'%', left:0, width:(crop.x*100)+'%', height:(crop.h*100)+'%', background:'rgba(0,0,0,0.55)' }} />
-                                <div style={{ position:'absolute', top:(crop.y*100)+'%', right:0, width:((1-crop.x-crop.w)*100)+'%', height:(crop.h*100)+'%', background:'rgba(0,0,0,0.55)' }} />
-
-                                {/* Bordo selezione */}
+                                <div style={{ position:'absolute', top:0, left:0, right:0, height:(crop.y*100)+'%', background:'rgba(0,0,0,0.6)', pointerEvents:'none' }} />
+                                <div style={{ position:'absolute', bottom:0, left:0, right:0, height:((1-crop.y-crop.h)*100)+'%', background:'rgba(0,0,0,0.6)', pointerEvents:'none' }} />
+                                <div style={{ position:'absolute', top:(crop.y*100)+'%', left:0, width:(crop.x*100)+'%', height:(crop.h*100)+'%', background:'rgba(0,0,0,0.6)', pointerEvents:'none' }} />
+                                <div style={{ position:'absolute', top:(crop.y*100)+'%', right:0, width:((1-crop.x-crop.w)*100)+'%', height:(crop.h*100)+'%', background:'rgba(0,0,0,0.6)', pointerEvents:'none' }} />
                                 <div style={{ position:'absolute', top:(crop.y*100)+'%', left:(crop.x*100)+'%', width:(crop.w*100)+'%', height:(crop.h*100)+'%', border:'2px solid #667eea', boxSizing:'border-box', touchAction:'none' }}
-                                    onMouseDown={function(e) { handleStart(e, 'move'); }}
-                                    onTouchStart={function(e) { handleStart(e, 'move'); }} />
-
-                                {/* Handle top-left */}
-                                <div style={Object.assign({}, hStyle, { top:(crop.y*100)+'%', left:(crop.x*100)+'%' })}
-                                    onMouseDown={function(e) { handleStart(e, 'tl'); }} onTouchStart={function(e) { handleStart(e, 'tl'); }} />
-                                {/* Handle top-right */}
-                                <div style={Object.assign({}, hStyle, { top:(crop.y*100)+'%', left:((crop.x+crop.w)*100)+'%' })}
-                                    onMouseDown={function(e) { handleStart(e, 'tr'); }} onTouchStart={function(e) { handleStart(e, 'tr'); }} />
-                                {/* Handle bottom-left */}
-                                <div style={Object.assign({}, hStyle, { top:((crop.y+crop.h)*100)+'%', left:(crop.x*100)+'%' })}
-                                    onMouseDown={function(e) { handleStart(e, 'bl'); }} onTouchStart={function(e) { handleStart(e, 'bl'); }} />
-                                {/* Handle bottom-right */}
-                                <div style={Object.assign({}, hStyle, { top:((crop.y+crop.h)*100)+'%', left:((crop.x+crop.w)*100)+'%' })}
-                                    onMouseDown={function(e) { handleStart(e, 'br'); }} onTouchStart={function(e) { handleStart(e, 'br'); }} />
+                                    onMouseDown={function(e) { handleStart(e,'move'); }}
+                                    onTouchStart={function(e) { handleStart(e,'move'); }}>
+                                    <div style={{ position:'absolute', top:'33%', left:0, right:0, borderTop:'1px solid rgba(255,255,255,0.3)', pointerEvents:'none' }} />
+                                    <div style={{ position:'absolute', top:'66%', left:0, right:0, borderTop:'1px solid rgba(255,255,255,0.3)', pointerEvents:'none' }} />
+                                    <div style={{ position:'absolute', left:'33%', top:0, bottom:0, borderLeft:'1px solid rgba(255,255,255,0.3)', pointerEvents:'none' }} />
+                                    <div style={{ position:'absolute', left:'66%', top:0, bottom:0, borderLeft:'1px solid rgba(255,255,255,0.3)', pointerEvents:'none' }} />
+                                </div>
+                                <div style={Object.assign({},hStyle,{top:(crop.y*100)+'%',left:(crop.x*100)+'%'})} onMouseDown={function(e){handleStart(e,'tl');}} onTouchStart={function(e){handleStart(e,'tl');}} />
+                                <div style={Object.assign({},hStyle,{top:(crop.y*100)+'%',left:((crop.x+crop.w)*100)+'%'})} onMouseDown={function(e){handleStart(e,'tr');}} onTouchStart={function(e){handleStart(e,'tr');}} />
+                                <div style={Object.assign({},hStyle,{top:((crop.y+crop.h)*100)+'%',left:(crop.x*100)+'%'})} onMouseDown={function(e){handleStart(e,'bl');}} onTouchStart={function(e){handleStart(e,'bl');}} />
+                                <div style={Object.assign({},hStyle,{top:((crop.y+crop.h)*100)+'%',left:((crop.x+crop.w)*100)+'%'})} onMouseDown={function(e){handleStart(e,'br');}} onTouchStart={function(e){handleStart(e,'br');}} />
                             </div>
                         )}
                     </div>
 
-                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', padding:'12px 16px', background:'rgba(0,0,0,0.8)' }}>
-                        <button onClick={onSkip}
-                            style={{ padding:'13px', borderRadius:'10px', border:'1px solid rgba(255,255,255,0.3)', background:'transparent', color:'white', cursor:'pointer', fontWeight:'700', fontSize:'14px' }}>
-                            Usa intera
-                        </button>
-                        <button onClick={doCrop}
-                            style={{ padding:'13px', borderRadius:'10px', border:'none', background:'#667eea', color:'white', cursor:'pointer', fontWeight:'800', fontSize:'14px' }}>
-                            ✂️ Ritaglia
-                        </button>
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', padding:'12px', background:'rgba(0,0,0,0.8)' }}>
+                        <button onClick={onSkip} style={{ padding:'14px', borderRadius:'10px', border:'1px solid rgba(255,255,255,0.3)', background:'transparent', color:'white', cursor:'pointer', fontWeight:'700', fontSize:'14px' }}>Usa intera</button>
+                        <button onClick={doCrop} style={{ padding:'14px', borderRadius:'10px', border:'none', background:'#667eea', color:'white', cursor:'pointer', fontWeight:'800', fontSize:'14px' }}>&#9986;&#65039; Ritaglia</button>
                     </div>
                 </div>
             );
