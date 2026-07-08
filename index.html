@@ -22,6 +22,7 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
 
     <!-- Firebase SDK v10 (modular, esportato su window per Babel) -->
@@ -6448,139 +6449,271 @@
         }
 
         // ============ RECEIPT SCAN MODAL ============
-        function ReceiptScanModal({ onClose, onExtracted, geminiApiKey }) {
-            const [status, setStatus] = React.useState('idle'); // idle|scanning|success|error
-            const [preview, setPreview] = React.useState(null);
-            const [result, setResult] = React.useState(null);
-            const [errorMsg, setErrorMsg] = React.useState('');
-            const fileRef = React.useRef();
+        // ===== MEMORIA P.IVA =====
+        const getPivaMemory = function() {
+            try { return JSON.parse(localStorage.getItem('receiptPivaMemory') || '{}'); } catch(e) { return {}; }
+        };
+        const savePivaMemory = function(piva, name, categoryId) {
+            try {
+                var m = getPivaMemory();
+                m[piva] = { name: name, categoryId: categoryId };
+                localStorage.setItem('receiptPivaMemory', JSON.stringify(m));
+            } catch(e) {}
+        };
 
-            const handleFile = async (e) => {
-                const file = e.target.files?.[0];
+        // ===== PARSING SCONTRINO ITALIANO =====
+        const parseReceiptText = function(text) {
+            var lines = text.split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
+            var result = { amount: null, date: null, store: null, piva: null, category: 'spesa', note: '' };
+
+            // P.IVA (11 cifre)
+            var pivaMatch = text.match(/P\.?\s*I\.?V\.?A\.?\s*[:.]?\s*(\d{11})/i)
+                         || text.match(/C\.?F\.?\s*[:.]?\s*(\d{11})/i)
+                         || text.match(/\b(\d{11})\b/);
+            if (pivaMatch) result.piva = pivaMatch[1];
+
+            // Data gg/mm/aaaa o gg-mm-aaaa
+            var dateMatch = text.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/);
+            if (dateMatch) {
+                var y = dateMatch[3].length === 2 ? '20' + dateMatch[3] : dateMatch[3];
+                result.date = String(dateMatch[1]).padStart(2,'0') + '/' + String(dateMatch[2]).padStart(2,'0') + '/' + y;
+            } else {
+                var t = new Date();
+                result.date = String(t.getDate()).padStart(2,'0') + '/' + String(t.getMonth()+1).padStart(2,'0') + '/' + t.getFullYear();
+            }
+
+            // Totale — cerca "TOTALE" seguito da importo
+            var totalPatterns = [
+                /TOTALE\s+COMPLESSIVO[\s:]*([\d]+[\.,][\d]{2})/i,
+                /TOTALE[\s:]*([\d]+[\.,][\d]{2})/i,
+                /IMPORTO[\s:]*([\d]+[\.,][\d]{2})/i,
+                /TOT[\s:]*([\d]+[\.,][\d]{2})/i,
+            ];
+            for (var i = 0; i < totalPatterns.length; i++) {
+                var m = text.match(totalPatterns[i]);
+                if (m) { result.amount = parseFloat(m[1].replace(',','.')); break; }
+            }
+            // Fallback: il numero più grande nel testo
+            if (!result.amount) {
+                var nums = (text.match(/\d+[\.,]\d{2}/g) || []).map(function(n) { return parseFloat(n.replace(',','.')); });
+                if (nums.length) result.amount = Math.max.apply(null, nums);
+            }
+
+            // Nome negozio — prima riga non vuota e non numerica
+            for (var j = 0; j < Math.min(lines.length, 5); j++) {
+                var l = lines[j];
+                if (l.length > 2 && !/^\d/.test(l) && !/P\.?IVA/i.test(l)) {
+                    result.store = l;
+                    break;
+                }
+            }
+
+            // Categoria da parole chiave
+            var lower = text.toLowerCase();
+            if (/farmac|medicinale|sanitari|dottore|salute/i.test(lower)) result.category = 'salute';
+            else if (/benzin|carburant|gasolio|eni|q8|tamoil|ip |agip/i.test(lower)) result.category = 'carburante';
+            else if (/ristoran|pizzer|bar |cafe|caffe|trattori|osteria|pub /i.test(lower)) result.category = 'ristoranti';
+            else if (/autostrad|pedagg|trenitalia|italo|atm|bus|taxi|uber/i.test(lower)) result.category = 'trasporti';
+            else if (/zara|h&m|hm|primark|decathlon|sport|abbigliament/i.test(lower)) result.category = 'shopping';
+            else if (/supermercato|coop|lidl|esselunga|carrefour|conad|eurospin|pam |tigre|iper|simply|penny|auchan/i.test(lower)) result.category = 'spesa';
+
+            result.note = result.store ? result.store : 'Scontrino';
+            return result;
+        };
+
+        function ReceiptScanModal({ onClose, onExtracted, geminiApiKey }) {
+            var [status, setStatus] = React.useState('idle');
+            var [preview, setPreview] = React.useState(null);
+            var [result, setResult] = React.useState(null);
+            var [errorMsg, setErrorMsg] = React.useState('');
+            var [ocrProgress, setOcrProgress] = React.useState(0);
+            var [pivaName, setPivaName] = React.useState('');
+            var [pivaCategory, setPivaCategory] = React.useState('');
+            var [showPivaEditor, setShowPivaEditor] = React.useState(false);
+            var fileRef = React.useRef();
+
+            var allCats = getCategoriesFromStorage().expense.filter(function(c) { return !c.archived; });
+
+            var handleFile = async function(e) {
+                var file = e.target.files && e.target.files[0];
                 if (!file) return;
                 setPreview(URL.createObjectURL(file));
                 setStatus('scanning');
+                setOcrProgress(0);
                 try {
-                    const base64 = await new Promise((res, rej) => {
-                        const r = new FileReader();
-                        r.onload = () => res(r.result.split(',')[1]);
-                        r.onerror = rej;
-                        r.readAsDataURL(file);
-                    });
-                    const today = new Date();
-                    const dd = String(today.getDate()).padStart(2,'0');
-                    const mm = String(today.getMonth()+1).padStart(2,'0');
-                    const yyyy = today.getFullYear();
-                    const todayStr = `${dd}/${mm}/${yyyy}`;
-                    const resp = await fetch(
-                        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`,
-                        {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                contents: [{ parts: [
-                                    { inline_data: { mime_type: file.type || 'image/jpeg', data: base64 } },
-                                    { text: `Analizza questo scontrino italiano. Rispondi SOLO con JSON valido (nessun markdown, nessun backtick), esempio: {"amount":15.50,"date":"21/04/2026","store":"Carrefour","category":"spesa","note":"spesa supermercato"}
-Campi:
-- amount: totale (numero)
-- date: data scontrino in formato gg/mm/aaaa (se non visibile usa ${todayStr})
-- store: nome negozio
-- category: una tra spesa|ristoranti|carburante|salute|shopping|trasporti|altro
-- note: descrizione breve` }
-                                ]}],
-                                generationConfig: { temperature: 0.1, maxOutputTokens: 200 }
-                            })
+                    // OCR con Tesseract.js
+                    if (!window.Tesseract) throw new Error('Tesseract non caricato');
+                    var ocrResult = await window.Tesseract.recognize(file, 'ita+eng', {
+                        logger: function(m) {
+                            if (m.status === 'recognizing text') {
+                                setOcrProgress(Math.round((m.progress || 0) * 100));
+                            }
                         }
-                    );
-                    const data = await resp.json();
-                    if (data.error) throw new Error(data.error.message);
-                    const text = (data.candidates?.[0]?.content?.parts?.[0]?.text || '').replace(/```[a-z]*/g,'').replace(/```/g,'').trim();
-                    const parsed = JSON.parse(text);
+                    });
+                    var rawText = ocrResult.data.text;
+                    var parsed = parseReceiptText(rawText);
+
+                    // Controlla memoria P.IVA
+                    if (parsed.piva) {
+                        var mem = getPivaMemory();
+                        if (mem[parsed.piva]) {
+                            parsed.store = mem[parsed.piva].name || parsed.store;
+                            parsed.category = mem[parsed.piva].categoryId || parsed.category;
+                            parsed.fromMemory = true;
+                        } else {
+                            parsed.newPiva = true;
+                        }
+                    }
+
                     setResult(parsed);
+                    if (parsed.piva && parsed.newPiva) {
+                        setPivaName(parsed.store || '');
+                        setPivaCategory(parsed.category || '');
+                        setShowPivaEditor(true);
+                    }
                     setStatus('success');
-                } catch(e) {
-                    setErrorMsg(e.message || 'Errore analisi');
+                } catch(err) {
+                    setErrorMsg(err.message || 'Errore OCR');
                     setStatus('error');
                 }
             };
 
+            var savePivaAndUse = function() {
+                if (result && result.piva && pivaName) {
+                    savePivaMemory(result.piva, pivaName, pivaCategory);
+                    var updated = Object.assign({}, result, { store: pivaName, category: pivaCategory });
+                    onExtracted(updated);
+                } else {
+                    onExtracted(result);
+                }
+                onClose();
+            };
+
             return (
                 <div className="modal" onClick={onClose}>
-                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxHeight:'90vh', overflowY:'auto' }}>
+                    <div className="modal-content" onClick={function(e) { e.stopPropagation(); }} style={{ maxHeight:'92vh', overflowY:'auto' }}>
                         <div className="modal-header">
                             <h2 className="modal-title">📷 Scansiona Scontrino</h2>
                             <button className="close-btn" onClick={onClose}>×</button>
                         </div>
                         <div style={{ padding:'16px' }}>
+
                             {status === 'idle' && (
                                 <div>
-                                    <p style={{ color:'#666', fontSize:'14px', marginBottom:'16px' }}>
-                                        Scatta una foto allo scontrino oppure carica un'immagine dalla galleria. Gemini AI estrarrà automaticamente importo, data e categoria.
+                                    <p style={{ color:'#666', fontSize:'13px', marginBottom:'16px' }}>
+                                        OCR gratuito — nessuna API necessaria. Riconosce automaticamente importo, data, P.IVA e nome esercizio.
                                     </p>
                                     <input ref={fileRef} type="file" accept="image/*" capture="environment"
                                         style={{ display:'none' }} onChange={handleFile} />
                                     <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px' }}>
-                                        <button onClick={() => { fileRef.current.removeAttribute('capture'); fileRef.current.click(); }}
+                                        <button onClick={function() { fileRef.current.removeAttribute('capture'); fileRef.current.click(); }}
                                             style={{ padding:'16px', border:'2px dashed #667eea', borderRadius:'12px', background:'white', cursor:'pointer', fontSize:'14px', color:'#667eea', fontWeight:'700' }}>
                                             🖼️ Galleria
                                         </button>
-                                        <button onClick={() => { fileRef.current.setAttribute('capture','environment'); fileRef.current.click(); }}
+                                        <button onClick={function() { fileRef.current.setAttribute('capture','environment'); fileRef.current.click(); }}
                                             style={{ padding:'16px', border:'none', borderRadius:'12px', background:'#667eea', cursor:'pointer', fontSize:'14px', color:'white', fontWeight:'700' }}>
                                             📷 Fotocamera
                                         </button>
                                     </div>
                                 </div>
                             )}
+
                             {status === 'scanning' && (
-                                <div style={{ textAlign:'center', padding:'30px 0' }}>
-                                    {preview && <img src={preview} style={{ width:'100%', maxHeight:'200px', objectFit:'contain', borderRadius:'8px', marginBottom:'16px' }} />}
+                                <div style={{ textAlign:'center', padding:'20px 0' }}>
+                                    {preview && <img src={preview} style={{ width:'100%', maxHeight:'180px', objectFit:'contain', borderRadius:'8px', marginBottom:'16px' }} />}
                                     <div style={{ fontSize:'32px', animation:'spin 1s linear infinite', display:'inline-block' }}>🔄</div>
-                                    <p style={{ color:'#667eea', fontWeight:'700', marginTop:'12px' }}>Analisi in corso...</p>
-                                    <p style={{ color:'#999', fontSize:'12px' }}>Gemini AI sta leggendo lo scontrino</p>
+                                    <p style={{ color:'#667eea', fontWeight:'700', marginTop:'12px' }}>Lettura testo in corso...</p>
+                                    <div style={{ background:'#f0f0f0', borderRadius:'10px', height:'8px', margin:'12px 0', overflow:'hidden' }}>
+                                        <div style={{ height:'100%', background:'#667eea', width: ocrProgress + '%', transition:'width 0.3s', borderRadius:'10px' }} />
+                                    </div>
+                                    <p style={{ color:'#999', fontSize:'12px' }}>{ocrProgress}% — Tesseract OCR (gratuito)</p>
                                 </div>
                             )}
+
                             {status === 'error' && (
                                 <div>
                                     {preview && <img src={preview} style={{ width:'100%', maxHeight:'150px', objectFit:'contain', borderRadius:'8px', marginBottom:'12px' }} />}
                                     <div style={{ padding:'12px', background:'#ffebee', borderRadius:'8px', color:'#c62828', marginBottom:'16px', fontSize:'13px' }}>
                                         ⚠️ {errorMsg}
                                     </div>
-                                    <button onClick={() => { setStatus('idle'); setPreview(null); setErrorMsg(''); }}
+                                    <button onClick={function() { setStatus('idle'); setPreview(null); setErrorMsg(''); }}
                                         style={{ width:'100%', padding:'12px', borderRadius:'10px', border:'1px solid #ddd', background:'white', cursor:'pointer', fontWeight:'700' }}>
                                         Riprova
                                     </button>
                                 </div>
                             )}
+
                             {status === 'success' && result && (
                                 <div>
-                                    {preview && <img src={preview} style={{ width:'100%', maxHeight:'160px', objectFit:'contain', borderRadius:'8px', marginBottom:'12px' }} />}
-                                    <div style={{ background:'#e8f5e9', borderRadius:'10px', padding:'14px', marginBottom:'16px' }}>
-                                        <div style={{ fontWeight:'800', fontSize:'15px', color:'#2e7d32', marginBottom:'10px' }}>✅ Scontrino analizzato</div>
-                                        <div style={{ display:'grid', gap:'6px', fontSize:'14px' }}>
+                                    {preview && <img src={preview} style={{ width:'100%', maxHeight:'140px', objectFit:'contain', borderRadius:'8px', marginBottom:'12px' }} />}
+
+                                    {/* Risultato OCR */}
+                                    <div style={{ background:'#e8f5e9', borderRadius:'10px', padding:'14px', marginBottom:'12px' }}>
+                                        <div style={{ fontWeight:'800', fontSize:'14px', color:'#2e7d32', marginBottom:'10px' }}>
+                                            ✅ Scontrino letto {result.fromMemory ? '(negozio riconosciuto 🧠)' : ''}
+                                        </div>
+                                        <div style={{ display:'grid', gap:'6px', fontSize:'13px' }}>
                                             <div style={{ display:'flex', justifyContent:'space-between' }}>
                                                 <span style={{ color:'#666' }}>Importo</span>
-                                                <span style={{ fontWeight:'800', color:'#f44336', fontSize:'18px' }}>€ {Number(result.amount).toFixed(2)}</span>
+                                                <span style={{ fontWeight:'800', color:'#f44336', fontSize:'16px' }}>
+                                                    {result.amount ? '€ ' + Number(result.amount).toFixed(2) : '—'}
+                                                </span>
                                             </div>
                                             <div style={{ display:'flex', justifyContent:'space-between' }}>
                                                 <span style={{ color:'#666' }}>Data</span>
-                                                <span style={{ fontWeight:'700' }}>{result.date}</span>
+                                                <span style={{ fontWeight:'700' }}>{result.date || '—'}</span>
                                             </div>
                                             <div style={{ display:'flex', justifyContent:'space-between' }}>
                                                 <span style={{ color:'#666' }}>Negozio</span>
-                                                <span style={{ fontWeight:'700' }}>{result.store}</span>
+                                                <span style={{ fontWeight:'700' }}>{result.store || '—'}</span>
                                             </div>
+                                            {result.piva && (
+                                                <div style={{ display:'flex', justifyContent:'space-between' }}>
+                                                    <span style={{ color:'#666' }}>P.IVA</span>
+                                                    <span style={{ fontWeight:'700', fontFamily:'monospace', fontSize:'12px' }}>{result.piva}</span>
+                                                </div>
+                                            )}
                                             <div style={{ display:'flex', justifyContent:'space-between' }}>
                                                 <span style={{ color:'#666' }}>Categoria</span>
                                                 <span style={{ fontWeight:'700', textTransform:'capitalize' }}>{result.category}</span>
                                             </div>
                                         </div>
                                     </div>
+
+                                    {/* Editor P.IVA — solo se P.IVA nuova */}
+                                    {showPivaEditor && result.piva && (
+                                        <div style={{ background:'#fff3e0', border:'2px solid #ff9800', borderRadius:'10px', padding:'12px', marginBottom:'12px' }}>
+                                            <div style={{ fontWeight:'700', fontSize:'13px', color:'#e65100', marginBottom:'8px' }}>
+                                                🏪 Nuovo esercizio — P.IVA {result.piva}
+                                            </div>
+                                            <div style={{ fontSize:'12px', color:'#666', marginBottom:'8px' }}>
+                                                Associa questo esercizio a una categoria per ricordarlo nelle prossime scansioni.
+                                            </div>
+                                            <input
+                                                type="text"
+                                                value={pivaName}
+                                                onChange={function(e) { setPivaName(e.target.value); }}
+                                                placeholder="Nome esercizio (es. Tigre Spa)"
+                                                style={{ width:'100%', padding:'8px', borderRadius:'6px', border:'1px solid #ddd', fontSize:'13px', marginBottom:'8px', boxSizing:'border-box' }}
+                                            />
+                                            <select
+                                                value={pivaCategory}
+                                                onChange={function(e) { setPivaCategory(e.target.value); }}
+                                                style={{ width:'100%', padding:'8px', borderRadius:'6px', border:'1px solid #ddd', fontSize:'13px', boxSizing:'border-box' }}>
+                                                <option value="">-- Seleziona categoria --</option>
+                                                {allCats.map(function(c) {
+                                                    return <option key={c.id} value={c.id}>{c.icon} {c.name}</option>;
+                                                })}
+                                            </select>
+                                        </div>
+                                    )}
+
                                     <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px' }}>
-                                        <button onClick={() => { setStatus('idle'); setPreview(null); setResult(null); }}
+                                        <button onClick={function() { setStatus('idle'); setPreview(null); setResult(null); setShowPivaEditor(false); }}
                                             style={{ padding:'12px', borderRadius:'10px', border:'1px solid #ddd', background:'white', cursor:'pointer', fontWeight:'700', fontSize:'14px' }}>
                                             🔄 Riprova
                                         </button>
-                                        <button onClick={() => { onExtracted(result); onClose(); }}
+                                        <button onClick={savePivaAndUse}
                                             style={{ padding:'12px', borderRadius:'10px', border:'none', background:'#4caf50', color:'white', cursor:'pointer', fontWeight:'800', fontSize:'14px' }}>
                                             ✅ Usa dati
                                         </button>
@@ -6592,6 +6725,7 @@ Campi:
                 </div>
             );
         }
+
 
         function SettingsModal({ onClose, settings, onSave, handleFileUpload, accounts, activeAccountId, getActiveAccount, deleteAccount, setShowSQLiteImportModal, setShowManageCategoriesModal, setShowManageAccountsModal, onExportCSV, onExportBackup, onImportBackup, userRef, sharedProfiles, onReauth, geminiApiKey, onSaveGeminiKey }) {
             const [monthStartDay, setMonthStartDay] = useState(settings.monthStartDay);
