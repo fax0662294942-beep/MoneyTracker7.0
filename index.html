@@ -2032,7 +2032,6 @@
             };
 
             const addTransaction = async (transaction) => {
-                // Salva ultimo conto per categoria
                 try { if (transaction.category && transaction.account) { var _m=JSON.parse(localStorage.getItem('lastAccountByCategory')||'{}'); _m[transaction.category]=transaction.account; localStorage.setItem('lastAccountByCategory',JSON.stringify(_m)); } } catch(e) {}
                 // Usa ref invece di transactions (evita stale closure con aggiunte rapide)
                 const current = transactionsRef.current;
@@ -6561,19 +6560,19 @@
                         try {
                             var today = new Date();
                             var todayStr = String(today.getDate()).padStart(2,'0') + '/' + String(today.getMonth()+1).padStart(2,'0') + '/' + today.getFullYear();
-                            var aiPrompt = 'Questo testo è stato estratto tramite OCR da uno scontrino italiano (può avere errori di lettura). Analizza e rispondi SOLO con JSON valido senza markdown:
-{"amount":15.50,"date":"21/04/2026","store":"Tigre","piva":"01234567890","category":"spesa","note":"spesa supermercato"}
-
-REGOLE:
-- amount: il TOTALE FINALE pagato, non subtotali o prezzi singoli. Cerca TOTALE COMPLESSIVO o TOTALE
-- date: data in gg/mm/aaaa, se assente usa ' + todayStr + '
-- store: nome esercizio commerciale (di solito nelle prime righe)
-- piva: 11 cifre dopo P.IVA o C.F., oppure null
-- category: spesa|ristoranti|carburante|salute|shopping|trasporti|altro
-- note: descrizione breve
-
-TESTO OCR:
-' + rawText.substring(0, 2000);
+                            // Regex pre-analisi: trova candidato totale come hint per l'AI
+                            var regexHint = '';
+                            var totPatterns = [
+                                /TOTALE\s+COMPLESSIVO\D{0,5}(\d+[.,]\d{2})/i,
+                                /Importo\s+pagato\D{0,5}(\d+[.,]\d{2})/i,
+                                /IMPORTO\s+PAGATO\D{0,5}(\d+[.,]\d{2})/i,
+                                /TOTALE\D{0,5}(\d+[.,]\d{2})/i
+                            ];
+                            for (var rpi = 0; rpi < totPatterns.length; rpi++) {
+                                var rpm = rawText.match(totPatterns[rpi]);
+                                if (rpm) { regexHint = ' VALORE TROVATO DA REGEX: ' + rpm[1] + ' (usa questo come amount).'; break; }
+                            }
+                            var aiPrompt = 'Testo OCR scontrino italiano. Rispondi SOLO JSON senza markdown: {"amount":4.17,"date":"08/07/2026","store":"Tigre","piva":"18068351008","category":"spesa","note":"spesa"} REGOLE: amount=numero sulla riga TOTALE COMPLESSIVO o Importo pagato, MAI sommare prodotti.' + regexHint + ' date=gg/mm/aaaa default ' + todayStr + ' store=nome nelle prime 5 righe piva=11 cifre dopo PIVA oppure null category=spesa|ristoranti|carburante|salute|shopping|trasporti|altro TESTO:\n' + rawText.substring(0, 2000);
 
                             // Prova modelli gratuiti in ordine
                             var models = ['gemini-2.0-flash-lite', 'gemini-2.0-flash', 'gemini-1.5-flash'];
