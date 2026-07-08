@@ -6541,24 +6541,86 @@
                 setStatus('scanning');
                 setOcrProgress(0);
                 try {
-                    // OCR con Tesseract.js
-                    if (!window.Tesseract) throw new Error('Tesseract non caricato');
+                    // STEP 1: OCR con Tesseract.js (sempre gratuito)
+                    if (!window.Tesseract) throw new Error('Tesseract non caricato. Ricarica la pagina.');
+                    setOcrProgress(5);
                     var ocrResult = await window.Tesseract.recognize(file, 'ita+eng', {
                         logger: function(m) {
                             if (m.status === 'recognizing text') {
-                                setOcrProgress(Math.round((m.progress || 0) * 100));
+                                setOcrProgress(5 + Math.round((m.progress || 0) * 75));
                             }
                         }
                     });
                     var rawText = ocrResult.data.text;
-                    var parsed = parseReceiptText(rawText);
+                    setOcrProgress(80);
 
-                    // Controlla memoria P.IVA
+                    var parsed;
+
+                    // STEP 2: Se c'è la chiave Gemini, usa AI sul TESTO (non sull'immagine)
+                    if (geminiApiKey && rawText.trim().length > 20) {
+                        try {
+                            var today = new Date();
+                            var todayStr = String(today.getDate()).padStart(2,'0') + '/' + String(today.getMonth()+1).padStart(2,'0') + '/' + today.getFullYear();
+                            var aiPrompt = 'Questo testo è stato estratto tramite OCR da uno scontrino italiano (può avere errori di lettura). Analizza e rispondi SOLO con JSON valido senza markdown:
+{"amount":15.50,"date":"21/04/2026","store":"Tigre","piva":"01234567890","category":"spesa","note":"spesa supermercato"}
+
+REGOLE:
+- amount: il TOTALE FINALE pagato, non subtotali o prezzi singoli. Cerca TOTALE COMPLESSIVO o TOTALE
+- date: data in gg/mm/aaaa, se assente usa ' + todayStr + '
+- store: nome esercizio commerciale (di solito nelle prime righe)
+- piva: 11 cifre dopo P.IVA o C.F., oppure null
+- category: spesa|ristoranti|carburante|salute|shopping|trasporti|altro
+- note: descrizione breve
+
+TESTO OCR:
+' + rawText.substring(0, 2000);
+
+                            // Prova modelli gratuiti in ordine
+                            var models = ['gemini-2.0-flash-lite', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+                            var aiData = null;
+                            for (var mi = 0; mi < models.length; mi++) {
+                                try {
+                                    var aiResp = await fetch(
+                                        'https://generativelanguage.googleapis.com/v1beta/models/' + models[mi] + ':generateContent?key=' + geminiApiKey,
+                                        {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({
+                                                contents: [{ parts: [{ text: aiPrompt }] }],
+                                                generationConfig: { temperature: 0.1, maxOutputTokens: 300 }
+                                            })
+                                        }
+                                    );
+                                    aiData = await aiResp.json();
+                                    if (!aiData.error) { console.log('Modello usato:', models[mi]); break; }
+                                    aiData = null;
+                                } catch(me) { aiData = null; }
+                            }
+
+                            if (aiData && aiData.candidates && aiData.candidates[0]) {
+                                var aiText = (aiData.candidates[0].content.parts[0].text || '').replace(/```[a-z]*/g,'').replace(/```/g,'').trim();
+                                parsed = JSON.parse(aiText);
+                                parsed.usedAI = true;
+                            }
+                        } catch(aiErr) {
+                            console.warn('AI fallita, uso regex:', aiErr.message);
+                        }
+                    }
+
+                    // STEP 3: Fallback regex se AI non disponibile o fallita
+                    if (!parsed) {
+                        parsed = parseReceiptText(rawText);
+                    }
+
+                    setOcrProgress(100);
+
+                    // STEP 4: Applica memoria P.IVA
                     if (parsed.piva) {
                         var mem = getPivaMemory();
                         if (mem[parsed.piva]) {
                             parsed.store = mem[parsed.piva].name || parsed.store;
-                            parsed.category = mem[parsed.piva].categoryId || parsed.category;
+                            var savedCat = mem[parsed.piva].categoryId;
+                            if (savedCat) parsed.category = savedCat;
                             parsed.fromMemory = true;
                         } else {
                             parsed.newPiva = true;
@@ -6573,7 +6635,7 @@
                     }
                     setStatus('success');
                 } catch(err) {
-                    setErrorMsg(err.message || 'Errore OCR');
+                    setErrorMsg(err.message || 'Errore lettura scontrino');
                     setStatus('error');
                 }
             };
@@ -6600,9 +6662,12 @@
 
                             {status === 'idle' && (
                                 <div>
-                                    <p style={{ color:'#666', fontSize:'13px', marginBottom:'16px' }}>
-                                        OCR gratuito — nessuna API necessaria. Riconosce automaticamente importo, data, P.IVA e nome esercizio.
+                                    <p style={{ color:'#666', fontSize:'13px', marginBottom:'12px' }}>
+                                        OCR gratuito con Tesseract. Se hai inserito la chiave Gemini nelle impostazioni, usa anche AI per una lettura più precisa del totale e del negozio.
                                     </p>
+                                    <div style={{ background: geminiApiKey ? '#e8f5e9' : '#fff3e0', borderRadius:'8px', padding:'8px 12px', marginBottom:'14px', fontSize:'12px', color: geminiApiKey ? '#2e7d32' : '#e65100' }}>
+                                        {geminiApiKey ? '✅ Gemini attivo — lettura AI precisa' : '⚠️ Senza chiave Gemini usa solo OCR base (meno preciso)'}
+                                    </div>
                                     <input ref={fileRef} type="file" accept="image/*" capture="environment"
                                         style={{ display:'none' }} onChange={handleFile} />
                                     <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px' }}>
@@ -6626,7 +6691,9 @@
                                     <div style={{ background:'#f0f0f0', borderRadius:'10px', height:'8px', margin:'12px 0', overflow:'hidden' }}>
                                         <div style={{ height:'100%', background:'#667eea', width: ocrProgress + '%', transition:'width 0.3s', borderRadius:'10px' }} />
                                     </div>
-                                    <p style={{ color:'#999', fontSize:'12px' }}>{ocrProgress}% — Tesseract OCR (gratuito)</p>
+                                    <p style={{ color:'#999', fontSize:'12px' }}>
+                                        {ocrProgress < 80 ? ocrProgress + '% — Lettura testo (OCR)...' : ocrProgress < 100 ? 'Analisi AI in corso...' : 'Completato!'}
+                                    </p>
                                 </div>
                             )}
 
@@ -6650,7 +6717,7 @@
                                     {/* Risultato OCR */}
                                     <div style={{ background:'#e8f5e9', borderRadius:'10px', padding:'14px', marginBottom:'12px' }}>
                                         <div style={{ fontWeight:'800', fontSize:'14px', color:'#2e7d32', marginBottom:'10px' }}>
-                                            ✅ Scontrino letto {result.fromMemory ? '(negozio riconosciuto 🧠)' : ''}
+                                            {result.usedAI ? '🤖 Letto con AI' : '📄 Letto con OCR'} {result.fromMemory ? '· negozio memorizzato 🧠' : ''}
                                         </div>
                                         <div style={{ display:'grid', gap:'6px', fontSize:'13px' }}>
                                             <div style={{ display:'flex', justifyContent:'space-between' }}>
