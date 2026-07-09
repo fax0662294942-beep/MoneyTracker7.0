@@ -746,8 +746,9 @@
             var minDate = Infinity, maxDate = 0, totalInc = 0, totalExp = 0;
             txRows.forEach(function(t) {
                 var ty = parseInt(t._ty);
-                var catId = ty===0 ? t._d_i : t._a_i;
-                var walId = ty===0 ? t._a_i : t._d_i;
+                // _d_i = categoria, _a_i = wallet
+                var catId = t._d_i;
+                var walId = t._a_i;
                 if (catId) usedCatIds[catId] = true;
                 if (walId) usedWalletIds[walId] = true;
                 var ts = parseInt(t._da||0);
@@ -808,7 +809,8 @@
             var rawCats = window.queryDB(db, "SELECT _id,_na,_ty,_pi FROM de GROUP BY _id");
             var catById = {};
             rawCats.forEach(function(r) {
-                catById[r._id] = { name:(r._na||'').trim(), type:(r._ty===1||r._ty==='1')?'expense':'income', parentId:r._pi||null };
+                var ty = parseInt(r._ty);
+                catById[r._id] = { name:(r._na||'').trim(), type:(ty===1)?'expense':'income', parentId:r._pi||null, rawTy:ty };
             });
             Object.keys(catById).forEach(function(id) {
                 var c = catById[id]; if(c.parentId&&catById[c.parentId]) c.parentName=catById[c.parentId].name;
@@ -823,8 +825,8 @@
 
             var usedCatIds={}, usedWalIds={};
             txRows.forEach(function(t) {
-                var ty=parseInt(t._ty);
-                var cid=ty===0?t._d_i:t._a_i, wid=ty===0?t._a_i:t._d_i;
+                // _d_i = sempre categoria, _a_i = sempre wallet (per entrate E uscite)
+                var cid=t._d_i, wid=t._a_i;
                 if(cid) usedCatIds[cid]=true; if(wid) usedWalIds[wid]=true;
             });
 
@@ -861,8 +863,9 @@
                     var d=ts>0?new Date(ts):new Date();
                     // Fix timezone: usa mezzogiorno per evitare shift UTC
                     var dateStr=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+'T12:00:00.000Z';
-                    var catId=ty===0?row._d_i:row._a_i;
-                    var walId=ty===0?row._a_i:row._d_i;
+                    // _d_i = categoria, _a_i = wallet (invariato per entrate e uscite)
+                    var catId=row._d_i;
+                    var walId=row._a_i;
                     var mtCatId=catIdToMT[catId]||'other';
                     var wal=walletMap[walId];
                     var note=row._co?String(row._co).trim():'';
