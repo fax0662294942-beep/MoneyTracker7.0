@@ -4856,11 +4856,11 @@
         }
 
         function AddTransactionModal({ onClose, onAdd, preselectedCategory, preselectedAccount, receiptPreFill }) {
-            const allAccounts = getAccountsFilter().filter(function(a) { return a.id !== 'all'; });
-            const allCategories = getCategoriesFromStorage();
-            const allTags = getTagsFromStorage();
-            const _getLastAcc = function(c) { try { return c ? (JSON.parse(localStorage.getItem('lastAccountByCategory')||'{}')[c]||null) : null; } catch(e) { return null; } };
-            const _defaultAccount = preselectedAccount || _getLastAcc(preselectedCategory) || (allAccounts[0] && allAccounts[0].id) || 'cash';
+            var allAccounts = getAccountsFilter().filter(function(a) { return a.id !== 'all'; });
+            var allCategories = getCategoriesFromStorage();
+            var allTags = getTagsFromStorage();
+            var _getLastAcc = function(c) { try { return c ? (JSON.parse(localStorage.getItem('lastAccountByCategory')||'{}')[c]||null) : null; } catch(e) { return null; } };
+            var _defaultAccount = preselectedAccount || _getLastAcc(preselectedCategory) || (allAccounts[0] && allAccounts[0].id) || 'cash';
 
             var [type, setType] = React.useState('expense');
             var [amount, setAmount] = React.useState(receiptPreFill && receiptPreFill.amount ? String(receiptPreFill.amount) : '');
@@ -4869,141 +4869,143 @@
             var [note, setNote] = React.useState(receiptPreFill && receiptPreFill.note ? receiptPreFill.note : '');
             var [date, setDate] = React.useState(receiptPreFill && receiptPreFill.date ? receiptPreFill.date : new Date().toISOString().split('T')[0]);
             var [selectedTags, setSelectedTags] = React.useState([]);
-            var [showDatePicker, setShowDatePicker] = React.useState(false);
+            var chipsRef = React.useRef(null);
 
             var cats = (type === 'expense' ? allCategories.expense : allCategories.income).filter(function(c) { return !c.archived; });
             var selectedCat = cats.find(function(c) { return c.id === category; });
             var selectedAcc = allAccounts.find(function(a) { return a.id === account; });
-            var accentColor = type === 'expense' ? '#e53935' : '#43a047';
 
-            var handleSubmit = function() {
-                if (!amount || parseFloat(amount) <= 0 || !category) return;
-                onAdd({
-                    id: Date.now(),
-                    type: type,
-                    amount: parseFloat(amount),
-                    category: category,
-                    account: account,
-                    note: note,
-                    date: new Date(date + 'T12:00:00').toISOString(),
-                    tags: selectedTags
-                });
-            };
+            var expenseColor = '#e53935';
+            var incomeColor = '#2e7d32';
+            var typeColor = type === 'expense' ? expenseColor : incomeColor;
+            var accColor = (selectedAcc && selectedAcc.color) ? selectedAcc.color : '#607d8b';
+            var catColor = selectedCat ? (selectedCat.color || typeColor) : '#bdbdbd';
 
             var fmtDate = function(d) {
-                var dt = new Date(d + 'T12:00:00');
-                var days = ['Dom','Lun','Mar','Mer','Gio','Ven','Sab'];
                 var months = ['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'];
+                var dt = new Date(d + 'T12:00:00');
                 var today = new Date(); today.setHours(0,0,0,0);
                 var dt2 = new Date(d + 'T12:00:00'); dt2.setHours(0,0,0,0);
                 var diff = (dt2 - today) / 86400000;
-                var prefix = diff === 0 ? 'Oggi' : diff === -1 ? 'Ieri' : diff === 1 ? 'Domani' : days[dt.getDay()];
-                return prefix + ', ' + dt.getDate() + ' ' + months[dt.getMonth()] + ' ' + dt.getFullYear();
+                if (diff === 0) return 'Oggi';
+                if (diff === -1) return 'Ieri';
+                return dt.getDate() + ' ' + months[dt.getMonth()];
             };
 
+            var scrollToChips = function() {
+                if (chipsRef.current) chipsRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            };
+
+            var handleSubmit = function() {
+                if (!amount || parseFloat(amount) <= 0 || !category) return;
+                onAdd({ id: Date.now(), type: type, amount: parseFloat(amount), category: category, account: account, note: note, date: new Date(date + 'T12:00:00').toISOString(), tags: selectedTags });
+            };
+
+            var canSave = amount && parseFloat(amount) > 0 && category;
+
             return (
-                <div className="modal" onClick={onClose}>
-                    <div onClick={function(e) { e.stopPropagation(); }} style={{ width:'100%', borderRadius:'20px 20px 0 0', overflow:'hidden', maxHeight:'92vh', display:'flex', flexDirection:'column', background:'white' }}>
+                <div style={{ position:'fixed', top:0, left:0, right:0, bottom:0, zIndex:1000, display:'flex', flexDirection:'column', background:'white' }}>
 
-                        {/* HEADER colorato: tipo + conto + categoria */}
-                        <div style={{ background: accentColor, padding:'0', flexShrink:0 }}>
+                    {/* HEADER colorato */}
+                    <div style={{ flexShrink:0 }}>
 
-                            {/* Riga tipo */}
-                            <div style={{ display:'flex', borderBottom:'1px solid rgba(255,255,255,0.2)' }}>
-                                <button type="button" onClick={function() { setType('expense'); setCategory(''); }}
-                                    style={{ flex:1, padding:'13px', border:'none', fontWeight:'800', fontSize:'14px', cursor:'pointer',
-                                        background: type==='expense' ? 'rgba(0,0,0,0.15)' : 'transparent', color:'white' }}>
-                                    ⬇ Uscita
-                                </button>
-                                <button type="button" onClick={function() { setType('income'); setCategory(''); }}
-                                    style={{ flex:1, padding:'13px', border:'none', fontWeight:'800', fontSize:'14px', cursor:'pointer',
-                                        background: type==='income' ? 'rgba(0,0,0,0.15)' : 'transparent', color:'white' }}>
-                                    ⬆ Entrata
-                                </button>
+                        {/* Riga tipo + chiudi */}
+                        <div style={{ display:'flex' }}>
+                            <button type="button" onClick={function() { setType('expense'); setCategory(''); }}
+                                style={{ flex:1, padding:'14px 0', border:'none', fontWeight:'800', fontSize:'15px', cursor:'pointer',
+                                    background: type==='expense' ? expenseColor : '#ffcdd2', color: type==='expense' ? 'white' : '#b71c1c' }}>
+                                &#8595; Uscita
+                            </button>
+                            <button type="button" onClick={function() { setType('income'); setCategory(''); }}
+                                style={{ flex:1, padding:'14px 0', border:'none', fontWeight:'800', fontSize:'15px', cursor:'pointer',
+                                    background: type==='income' ? incomeColor : '#c8e6c9', color: type==='income' ? 'white' : '#1b5e20' }}>
+                                &#8593; Entrata
+                            </button>
+                            <button type="button" onClick={onClose}
+                                style={{ padding:'14px 16px', border:'none', background:'#333', color:'white', fontWeight:'800', fontSize:'18px', cursor:'pointer' }}>
+                                &#215;
+                            </button>
+                        </div>
+
+                        {/* Riga conto + categoria */}
+                        <div style={{ display:'flex', height:'68px' }}>
+                            {/* Conto */}
+                            <div style={{ flex:1, background: accColor, padding:'8px 14px', display:'flex', flexDirection:'column', justifyContent:'center', borderRight:'1px solid rgba(255,255,255,0.3)' }}>
+                                <div style={{ fontSize:'9px', color:'rgba(255,255,255,0.75)', textTransform:'uppercase', fontWeight:'700', letterSpacing:'0.5px', marginBottom:'3px' }}>Dal conto</div>
+                                <select value={account} onChange={function(e) { setAccount(e.target.value); }}
+                                    style={{ background:'transparent', border:'none', color:'white', fontWeight:'800', fontSize:'14px', cursor:'pointer', outline:'none', padding:0, width:'100%', appearance:'none', WebkitAppearance:'none' }}>
+                                    {allAccounts.map(function(a) {
+                                        return <option key={a.id} value={a.id} style={{ color:'#333', background:'white' }}>{a.name}</option>;
+                                    })}
+                                </select>
                             </div>
-
-                            {/* Riga conto + categoria selezionata */}
-                            <div style={{ display:'flex', padding:'0' }}>
-                                {/* Conto */}
-                                <div style={{ flex:1, padding:'10px 14px', borderRight:'1px solid rgba(255,255,255,0.2)' }}>
-                                    <div style={{ fontSize:'10px', color:'rgba(255,255,255,0.7)', textTransform:'uppercase', fontWeight:'600', marginBottom:'2px' }}>Dal conto</div>
-                                    <select value={account} onChange={function(e) { setAccount(e.target.value); }}
-                                        style={{ background:'transparent', border:'none', color:'white', fontWeight:'800', fontSize:'15px', cursor:'pointer', width:'100%', outline:'none', padding:0 }}>
-                                        {allAccounts.map(function(a) {
-                                            return <option key={a.id} value={a.id} style={{ color:'#333', background:'white' }}>{a.name}</option>;
-                                        })}
-                                    </select>
+                            {/* Categoria */}
+                            <div onClick={scrollToChips} style={{ flex:1, background: catColor, padding:'8px 14px', display:'flex', flexDirection:'column', justifyContent:'center', cursor:'pointer' }}>
+                                <div style={{ fontSize:'9px', color:'rgba(255,255,255,0.75)', textTransform:'uppercase', fontWeight:'700', letterSpacing:'0.5px', marginBottom:'3px' }}>
+                                    Categoria <span style={{ fontSize:'10px' }}>&#8595;</span>
                                 </div>
-                                {/* Categoria selezionata */}
-                                <div style={{ flex:1, padding:'10px 14px' }}>
-                                    <div style={{ fontSize:'10px', color:'rgba(255,255,255,0.7)', textTransform:'uppercase', fontWeight:'600', marginBottom:'2px' }}>{type==='expense' ? 'Categoria' : 'Voce'}</div>
-                                    <div style={{ color:'white', fontWeight:'800', fontSize:'15px', minHeight:'22px' }}>
-                                        {selectedCat ? (selectedCat.icon || '') + ' ' + selectedCat.name : <span style={{ opacity:0.6, fontSize:'13px' }}>Seleziona...</span>}
-                                    </div>
+                                <div style={{ color:'white', fontWeight:'800', fontSize:'14px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                                    {selectedCat ? ((selectedCat.icon || '') + ' ' + selectedCat.name) : <span style={{ opacity:0.7, fontSize:'13px' }}>Tocca per scegliere</span>}
                                 </div>
-                            </div>
-
-                            {/* Importo */}
-                            <div style={{ textAlign:'center', padding:'6px 16px 10px', borderTop:'1px solid rgba(255,255,255,0.2)' }}>
-                                <input
-                                    type="number"
-                                    inputMode="decimal"
-                                    placeholder="0,00"
-                                    value={amount}
-                                    onChange={function(e) { setAmount(e.target.value); }}
-                                    autoFocus
-                                    style={{ background:'transparent', border:'none', color:'white', fontSize:'36px', fontWeight:'800', textAlign:'center', width:'100%', outline:'none', caretColor:'white' }}
-                                />
-                                <div style={{ color:'rgba(255,255,255,0.8)', fontSize:'12px', marginTop:'-4px' }}>€</div>
                             </div>
                         </div>
 
-                        {/* CHIPS categorie scrollabili */}
-                        <div style={{ overflowX:'auto', whiteSpace:'nowrap', padding:'10px 12px 6px', borderBottom:'1px solid #f0f0f0', flexShrink:0, scrollbarWidth:'none' }}>
-                            {cats.map(function(cat) {
-                                var sel = cat.id === category;
-                                return (
-                                    <button key={cat.id} type="button"
-                                        onClick={function() { setCategory(sel ? '' : cat.id); }}
-                                        style={{ display:'inline-flex', alignItems:'center', gap:'5px', marginRight:'8px',
-                                            padding:'7px 13px', borderRadius:'20px', border: sel ? 'none' : '1.5px solid #ddd',
-                                            background: sel ? accentColor : 'white', color: sel ? 'white' : '#444',
-                                            fontWeight: sel ? '800' : '500', fontSize:'13px', cursor:'pointer', whiteSpace:'nowrap',
-                                            boxShadow: sel ? '0 2px 8px rgba(0,0,0,0.2)' : 'none', transition:'all 0.15s' }}>
-                                        <span>{cat.icon || ''}</span>
-                                        <span>{cat.name}</span>
-                                    </button>
-                                );
-                            })}
+                        {/* Importo */}
+                        <div style={{ background: typeColor, textAlign:'center', padding:'8px 16px 12px' }}>
+                            <input type="number" inputMode="decimal" placeholder="0,00" value={amount}
+                                onChange={function(e) { setAmount(e.target.value); }} autoFocus
+                                style={{ background:'transparent', border:'none', color:'white', fontSize:'42px', fontWeight:'800', textAlign:'center', width:'100%', outline:'none', caretColor:'white' }} />
+                            <div style={{ color:'rgba(255,255,255,0.7)', fontSize:'12px', marginTop:'-6px' }}>€</div>
+                        </div>
+                    </div>
+
+                    {/* BODY scrollabile */}
+                    <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column' }}>
+
+                        {/* Chips categorie */}
+                        <div ref={chipsRef} style={{ padding:'10px 12px 6px', borderBottom:'1px solid #f0f0f0', flexShrink:0 }}>
+                            <div style={{ overflowX:'auto', whiteSpace:'nowrap', scrollbarWidth:'none' }}>
+                                {cats.map(function(cat) {
+                                    var sel = cat.id === category;
+                                    return (
+                                        <button key={cat.id} type="button" onClick={function() { setCategory(sel ? '' : cat.id); }}
+                                            style={{ display:'inline-flex', alignItems:'center', gap:'5px', marginRight:'8px',
+                                                padding:'7px 13px', borderRadius:'20px',
+                                                border: sel ? 'none' : '1.5px solid #ddd',
+                                                background: sel ? (cat.color || typeColor) : 'white',
+                                                color: sel ? 'white' : '#555',
+                                                fontWeight: sel ? '800' : '500', fontSize:'13px',
+                                                cursor:'pointer', whiteSpace:'nowrap',
+                                                boxShadow: sel ? '0 2px 8px rgba(0,0,0,0.25)' : 'none' }}>
+                                            <span>{cat.icon || ''}</span>
+                                            <span>{cat.name}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
                         </div>
 
-                        {/* BODY: note + data + tags */}
-                        <div style={{ flex:1, overflowY:'auto', padding:'12px 16px' }}>
-
-                            {/* Note */}
+                        {/* Campi */}
+                        <div style={{ padding:'12px 16px', flex:1 }}>
                             <input type="text" placeholder="Note..." value={note}
                                 onChange={function(e) { setNote(e.target.value); }}
-                                style={{ width:'100%', padding:'11px 14px', borderRadius:'10px', border:'1.5px solid #e0e0e0',
-                                    fontSize:'14px', boxSizing:'border-box', outline:'none', marginBottom:'10px' }} />
+                                style={{ width:'100%', padding:'12px 14px', borderRadius:'10px', border:'1.5px solid #e0e0e0', fontSize:'14px', boxSizing:'border-box', outline:'none', marginBottom:'10px' }} />
 
-                            {/* Data */}
-                            <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'10px' }}>
+                            <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'10px' }}>
                                 <input type="date" value={date} onChange={function(e) { setDate(e.target.value); }}
-                                    style={{ flex:1, padding:'10px 12px', borderRadius:'10px', border:'1.5px solid #e0e0e0',
-                                        fontSize:'14px', outline:'none', color:'#333' }} />
-                                <div style={{ color:'#888', fontSize:'12px', whiteSpace:'nowrap' }}>{fmtDate(date)}</div>
+                                    style={{ flex:1, padding:'11px 12px', borderRadius:'10px', border:'1.5px solid #e0e0e0', fontSize:'14px', outline:'none' }} />
+                                <span style={{ color:typeColor, fontWeight:'700', fontSize:'13px', whiteSpace:'nowrap' }}>{fmtDate(date)}</span>
                             </div>
 
-                            {/* Tags */}
                             {allTags.length > 0 && (
-                                <div style={{ display:'flex', flexWrap:'wrap', gap:'6px', marginBottom:'8px' }}>
+                                <div style={{ display:'flex', flexWrap:'wrap', gap:'6px' }}>
                                     {allTags.map(function(tag) {
                                         var sel = selectedTags.includes(tag.id);
                                         return (
                                             <button key={tag.id} type="button"
                                                 onClick={function() { setSelectedTags(sel ? selectedTags.filter(function(t) { return t !== tag.id; }) : [...selectedTags, tag.id]); }}
-                                                style={{ padding:'5px 10px', borderRadius:'12px', border:'1.5px solid ' + (sel ? accentColor : '#ddd'),
-                                                    background: sel ? accentColor + '20' : 'white', color: sel ? accentColor : '#777',
+                                                style={{ padding:'5px 10px', borderRadius:'12px', border:'1.5px solid ' + (sel ? typeColor : '#ddd'),
+                                                    background: sel ? typeColor + '20' : 'white', color: sel ? typeColor : '#777',
                                                     fontSize:'12px', fontWeight: sel ? '700' : '400', cursor:'pointer' }}>
                                                 {tag.name}
                                             </button>
@@ -5012,19 +5014,16 @@
                                 </div>
                             )}
                         </div>
+                    </div>
 
-                        {/* Bottone CONFERMA */}
-                        <div style={{ padding:'12px 16px', borderTop:'1px solid #f0f0f0', flexShrink:0 }}>
-                            <button type="button" onClick={handleSubmit}
-                                disabled={!amount || parseFloat(amount) <= 0 || !category}
-                                style={{ width:'100%', padding:'15px', borderRadius:'12px', border:'none',
-                                    background: (!amount || parseFloat(amount) <= 0 || !category) ? '#ccc' : accentColor,
-                                    color:'white', fontWeight:'800', fontSize:'16px', cursor: (!amount || parseFloat(amount) <= 0 || !category) ? 'not-allowed' : 'pointer',
-                                    transition:'background 0.2s' }}>
-                                {type === 'expense' ? '✅ Salva uscita' : '✅ Salva entrata'}
-                                {amount && parseFloat(amount) > 0 ? ' — €' + parseFloat(amount).toFixed(2) : ''}
-                            </button>
-                        </div>
+                    {/* SALVA */}
+                    <div style={{ padding:'10px 16px 16px', borderTop:'1px solid #f0f0f0', flexShrink:0 }}>
+                        <button type="button" onClick={handleSubmit} disabled={!canSave}
+                            style={{ width:'100%', padding:'15px', borderRadius:'12px', border:'none',
+                                background: canSave ? typeColor : '#ccc',
+                                color:'white', fontWeight:'800', fontSize:'16px', cursor: canSave ? 'pointer' : 'not-allowed' }}>
+                            {canSave ? ('&#10003; Salva ' + (type==='expense' ? 'uscita' : 'entrata') + ' \u2014 \u20ac' + parseFloat(amount).toFixed(2)) : ('Scegli categoria e importo')}
+                        </button>
                     </div>
                 </div>
             );
