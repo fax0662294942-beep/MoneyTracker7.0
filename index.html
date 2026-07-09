@@ -1387,6 +1387,7 @@
             const [showAccountModal, setShowAccountModal] = useState(false);
             const [showTransferModal, setShowTransferModal] = useState(false);
             const [transfersOnlyFilter, setTransfersOnlyFilter] = useState(false);
+            const [typeFilter, setTypeFilter] = useState('all'); // 'all' | 'income' | 'expense' | 'transfer'
             const [showSQLiteImportModal, setShowSQLiteImportModal] = useState(false);
             const [showManageCategoriesModal, setShowManageCategoriesModal] = useState(false);
             const [showManageAccountsModal, setShowManageAccountsModal] = useState(false);
@@ -1684,6 +1685,7 @@
                 // Reset filtri
                 setCategoryFilter(null);
                 setTransfersOnlyFilter(false);
+                setTypeFilter('all');
                 setSelectedAccount('all');
             }, [activeAccountId]);
 
@@ -3637,33 +3639,26 @@
                                     </div>
                                 )}
 
-                                <div style={{
-                                    display: 'flex',
-                                    gap: '10px',
-                                    marginBottom: '15px',
-                                    alignItems: 'center'
-                                }}>
-                                    <button
-                                        onClick={() => setTransfersOnlyFilter(!transfersOnlyFilter)}
-                                        style={{
-                                            background: transfersOnlyFilter ? '#FF9800' : '#e0e0e0',
-                                            color: transfersOnlyFilter ? 'white' : '#666',
-                                            border: 'none',
-                                            padding: '8px 16px',
-                                            borderRadius: '20px',
-                                            cursor: 'pointer',
-                                            fontSize: '13px',
-                                            fontWeight: 'bold',
-                                            transition: 'all 0.3s'
-                                        }}
-                                    >
-                                        🔄 {transfersOnlyFilter ? 'Mostra tutti' : 'Solo trasferimenti'}
-                                    </button>
-                                    {transfersOnlyFilter && (
-                                        <span style={{ fontSize: '12px', color: '#666' }}>
-                                            {filteredTransactions.filter(t => t.isTransfer).length} trasferimenti
-                                        </span>
-                                    )}
+                                <div style={{ display:'flex', gap:'6px', marginBottom:'12px', overflowX:'auto', paddingBottom:'2px' }}>
+                                    {[
+                                        { key:'all',      label:'Tutte',          color:'#667eea' },
+                                        { key:'income',   label:'↑ Entrate',      color:'#2e7d32' },
+                                        { key:'expense',  label:'↓ Uscite',       color:'#e53935' },
+                                        { key:'transfer', label:'🔄 Trasferimenti', color:'#FF9800' }
+                                    ].map(function(f) {
+                                        var active = typeFilter === f.key;
+                                        return (
+                                            <button key={f.key}
+                                                onClick={() => { setTypeFilter(f.key); setTransfersOnlyFilter(f.key === 'transfer'); }}
+                                                style={{ padding:'7px 14px', borderRadius:'20px', border: active ? 'none' : '1.5px solid #ddd',
+                                                    background: active ? f.color : 'white', color: active ? 'white' : '#666',
+                                                    fontWeight: active ? '800' : '500', fontSize:'13px', cursor:'pointer',
+                                                    whiteSpace:'nowrap', boxShadow: active ? '0 2px 6px rgba(0,0,0,0.2)' : 'none',
+                                                    transition:'all 0.15s', flexShrink:0 }}>
+                                                {f.label}
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                                 
                                 {(() => {
@@ -3685,13 +3680,15 @@
                                     }
                                     let displayTransactions = periodTransactions.sort((a,b) => new Date(b.date) - new Date(a.date));
                                     if (categoryFilter) displayTransactions = displayTransactions.filter(t => t.category === categoryFilter);
-                                    if (transfersOnlyFilter) displayTransactions = displayTransactions.filter(t => t.isTransfer);
+                                    if (typeFilter === 'income') displayTransactions = displayTransactions.filter(t => t.type === 'income' && !t.isTransfer);
+                                    else if (typeFilter === 'expense') displayTransactions = displayTransactions.filter(t => t.type === 'expense' && !t.isTransfer);
+                                    else if (typeFilter === 'transfer') displayTransactions = displayTransactions.filter(t => t.isTransfer);
                                     
                                     return displayTransactions.length === 0 ? (
                                         <div className="empty-state">
                                             <div className="empty-icon">📊</div>
                                             <h3>Nessuna transazione</h3>
-                                            <p>{categoryFilter ? 'Nessuna transazione per questa categoria' : transfersOnlyFilter ? 'Nessun trasferimento trovato' : 'Inizia ad aggiungere le tue spese e entrate!'}</p>
+                                            <p>{categoryFilter ? 'Nessuna transazione per questa categoria' : typeFilter === 'transfer' ? 'Nessun trasferimento trovato' : typeFilter === 'income' ? 'Nessuna entrata trovata' : typeFilter === 'expense' ? 'Nessuna uscita trovata' : 'Inizia ad aggiungere le tue spese e entrate!'}</p>
                                         </div>
                                     ) : (
                                         <TransactionList 
