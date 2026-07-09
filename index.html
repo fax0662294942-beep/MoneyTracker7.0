@@ -2283,8 +2283,13 @@
             // IMPORT DA 1MONEY CSV - versione completa senza perdita dati
             const import1MoneyCSV = (csvText) => {
                 try {
-                    const lines = csvText.split('\n').filter(line => line.trim());
+                    // Rimuovi BOM UTF-8 se presente
+                    const cleanText = csvText.replace(/^\uFEFF/, '');
+                    const lines = cleanText.split('\n').filter(line => line.trim());
                     if (lines.length < 2) throw new Error('File CSV vuoto o non valido');
+                    // Auto-detect separatore: conta virgole e punti e virgola nella prima riga
+                    const firstLine = lines[0];
+                    const separator = (firstLine.split(';').length > firstLine.split(',').length) ? ';' : ',';
 
                     // Leggi categorie e conti esistenti
                     const existingCats = getCategoriesFromStorage();
@@ -2352,7 +2357,7 @@
                                 if (ch === '"') {
                                     if (inQuotes && raw[j+1] === '"') { current += '"'; j++; }
                                     else inQuotes = !inQuotes;
-                                } else if (ch === ',' && !inQuotes) {
+                                } else if (ch === separator && !inQuotes) {
                                     fields.push(current.trim());
                                     current = '';
                                 } else {
@@ -2487,7 +2492,14 @@
 
                     // Aggiungi transazioni (più recenti prima)
                     importedTransactions.sort((a, b) => new Date(b.date) - new Date(a.date));
-                    setTransactions(prev => [...importedTransactions, ...prev]);
+                    const allCsvTxs = [...importedTransactions, ...transactionsRef.current];
+                    transactionsRef.current = allCsvTxs;
+                    setTransactions(allCsvTxs);
+                    // Salva su IndexedDB e Firestore
+                    window.saveTransactionsToDB(activeAccountId, allCsvTxs).catch(function(e) { console.error('CSV import IndexedDB error:', e); });
+                    if (window.FB_READY && userRef.current) {
+                        window.syncTransactionsToFirestore(activeAccountId, allCsvTxs, userRef.current.uid, sharedProfiles.current).catch(function(e) { console.error('CSV import Firestore sync error:', e); });
+                    }
 
                     // ── PARSING DEBITI (righe finali del CSV) ──
                     // Struttura anomala: nome in col DATA, saldo in col TIPOLOGIA, "EUR" in col DAL CONTO
@@ -2757,7 +2769,14 @@
                             : t;
                     });
 
-                    setTransactions(function(prev) { return [...remappedTxs, ...prev]; });
+                    const allTxs = [...remappedTxs, ...transactionsRef.current];
+                    transactionsRef.current = allTxs;
+                    setTransactions(allTxs);
+                    // Salva su IndexedDB e Firestore
+                    window.saveTransactionsToDB(activeAccountId, allTxs).catch(function(e) { console.error('SQLite import IndexedDB save error:', e); });
+                    if (window.FB_READY && userRef.current) {
+                        window.syncTransactionsToFirestore(activeAccountId, allTxs, userRef.current.uid, sharedProfiles.current).catch(function(e) { console.error('SQLite import Firestore sync error:', e); });
+                    }
                     setCategoriesVersion(function(v) { return v + 1; });
 
                     return {
