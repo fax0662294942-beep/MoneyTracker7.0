@@ -1,4 +1,4 @@
-const CACHE_NAME = 'moneytracker-v1004';
+const CACHE_NAME = 'moneytracker-v1105';
 const LOCAL_ASSETS = ['./index.html', './manifest.json'];
 
 // Installa e pre-cacha gli asset locali
