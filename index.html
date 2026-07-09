@@ -1176,6 +1176,16 @@
 
         // ============ VERSIONE APP ============
         const APP_VERSION = '11.5';
+
+        // Formattazione valuta italiana: 30.388,90
+        const fmtEur = function(n, decimals) {
+            if (n === null || n === undefined || isNaN(n)) return '0,00';
+            var d = decimals !== undefined ? decimals : 2;
+            var parts = Math.abs(Number(n)).toFixed(d).split('.');
+            parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+            var result = parts.join(',');
+            return Number(n) < 0 ? '-' + result : result;
+        };
         const APP_BUILD_DATE = '15/06/2026 11:59';
 
 
@@ -3477,7 +3487,7 @@
 
                     <div className="balance-card">
                         <div className="balance-label">Saldo {formatPeriodDisplay()}</div>
-                        <div className="balance-amount">€ {balance.toFixed(2)}</div>
+                        <div className="balance-amount">€ {fmtEur(balance)}</div>
 		                {currentPage !== 'categories' && (
 		                    <div className="stats-row" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
 		                        <div
@@ -3487,7 +3497,7 @@
 		                            title="Filtra Entrate"
 		                        >
                                     <div className="stat-label">Entrate</div>
-                                    <div className="stat-value income">€ {totalIncome.toFixed(2)}</div>
+                                    <div className="stat-value income">€ {fmtEur(totalIncome)}</div>
                                 </div>
 		                        <div
 		                            className="stat-box expense"
@@ -3496,7 +3506,7 @@
 		                            title="Filtra Uscite"
 		                        >
                                     <div className="stat-label">Uscite</div>
-                                    <div className="stat-value expense">€ {totalExpense.toFixed(2)}</div>
+                                    <div className="stat-value expense">€ {fmtEur(totalExpense)}</div>
                                 </div>
                             </div>
                         )}
@@ -3512,7 +3522,7 @@
                                 title="Vedi categorie Entrate"
                             >
                                 <div className="stat-label">Entrate</div>
-                                <div className="stat-value income">€ {totalIncome.toFixed(2)}</div>
+                                <div className="stat-value income">€ {fmtEur(totalIncome)}</div>
                             </div>
                             <div
                                 className={`stat-box expense${categoryFocus === 'expense' ? ' active-expense' : ''}`}
@@ -3521,7 +3531,7 @@
                                 title="Vedi categorie Uscite"
                             >
                                 <div className="stat-label">Uscite</div>
-                                <div className="stat-value expense">€ {totalExpense.toFixed(2)}</div>
+                                <div className="stat-value expense">€ {fmtEur(totalExpense)}</div>
                             </div>
                         </div>
                     )}
@@ -4165,7 +4175,7 @@
                         ) : (
                             <div style={{ textAlign: 'right' }}>
                                 <div style={{ fontWeight: 'bold', fontSize: '16px', color: saldo >= 0 ? '#4CAF50' : '#f44336' }}>
-                                    {saldo >= 0 ? '' : '-'}€ {Math.abs(saldo).toFixed(2)}
+                                    {saldo >= 0 ? "" : "-"}€ {fmtEur(Math.abs(saldo))}
                                 </div>
                             </div>
                         )}
@@ -4270,7 +4280,7 @@
                                     <div style={{ color: 'white', fontWeight: 'bold', fontSize: '20px' }}>{selectedAcc?.name}</div>
                                     <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px' }}>Saldo del conto</div>
                                     <div style={{ color: 'white', fontWeight: 'bold', fontSize: '22px' }}>
-                                        {saldo >= 0 ? '' : '-'}€ {Math.abs(saldo).toFixed(2)}
+                                        {saldo >= 0 ? "" : "-"}€ {fmtEur(Math.abs(saldo))}
                                     </div>
                                 </div>
                                 <button onClick={() => setSelectedAcc(null)} style={{ background: 'rgba(255,255,255,0.3)', border: 'none', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer', color: 'white', fontSize: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
@@ -4305,7 +4315,7 @@
                                                         <div style={{ fontSize: '11px', color: '#999' }}>{new Date(t.date).toLocaleDateString('it-IT')}{t.note ? ' · ' + t.note : ''}</div>
                                                     </div>
                                                     <div style={{ fontWeight: 'bold', color: t.type === 'income' ? '#4CAF50' : '#f44336', fontSize: '14px' }}>
-                                                        {t.type === 'income' ? '+' : '-'}€{t.amount.toFixed(2)}
+                                                        {t.type === "income" ? "+" : "-"}€{fmtEur(t.amount)}
                                                     </div>
                                                 </div>
                                             );
@@ -4317,7 +4327,7 @@
                                     <div>
                                         <div style={{ background: '#f3f4f6', borderRadius: '10px', padding: '14px', marginBottom: '16px', textAlign: 'center' }}>
                                             <div style={{ fontSize: '12px', color: '#666' }}>Saldo attuale</div>
-                                            <div style={{ fontSize: '22px', fontWeight: 'bold', color: saldo >= 0 ? '#4CAF50' : '#f44336' }}>€ {saldo.toFixed(2)}</div>
+                                            <div style={{ fontSize: '22px', fontWeight: 'bold', color: saldo >= 0 ? '#4CAF50' : '#f44336' }}>€ {fmtEur(saldo)}</div>
                                         </div>
                                         <div style={{ marginBottom: '12px' }}>
                                             <label style={{ fontSize: '13px', color: '#666', display: 'block', marginBottom: '6px' }}>Nuovo saldo corretto</label>
@@ -4327,7 +4337,7 @@
                                                 className="form-input"
                                                 value={adjustAmt}
                                                 onChange={e => setAdjustAmt(e.target.value)}
-                                                placeholder={saldo.toFixed(2)}
+                                                placeholder={fmtEur(saldo)}
                                             />
                                         </div>
                                         <div style={{ marginBottom: '16px' }}>
@@ -4337,7 +4347,7 @@
                                         {adjustAmt && !isNaN(parseFloat(adjustAmt)) && (
                                             <div style={{ background: '#e8f5e9', borderRadius: '8px', padding: '10px', marginBottom: '12px', fontSize: '13px', color: '#2e7d32', textAlign: 'center' }}>
                                                 Verrà creato un movimento di{' '}
-                                                <strong>{parseFloat(adjustAmt) - saldo >= 0 ? '+' : ''}€{(parseFloat(adjustAmt) - saldo).toFixed(2)}</strong>
+                                                <strong>{parseFloat(adjustAmt) - saldo >= 0 ? "+" : ""}€{fmtEur(parseFloat(adjustAmt) - saldo)}</strong>
                                             </div>
                                         )}
                                         <button onClick={doAdjust} style={{ width: '100%', padding: '12px', background: '#667eea', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px' }}>
@@ -4399,7 +4409,7 @@
                     }}>
                         <div style={{ fontSize: '13px', opacity: 0.85 }}>Saldo Totale Conti</div>
                         <div style={{ fontSize: '32px', fontWeight: 'bold' }}>
-                            {totaleSaldo >= 0 ? '' : '-'}€ {Math.abs(totaleSaldo).toFixed(2)}
+                            {totaleSaldo >= 0 ? "" : "-"}€ {fmtEur(Math.abs(totaleSaldo))}
                         </div>
                         <div style={{ fontSize: '11px', opacity: 0.7, marginTop: '4px' }}>
                             {activeAccs.filter(a => a.includeInTotal !== false).length} conti inclusi
@@ -4455,7 +4465,7 @@
                                         <div style={{ flex: 1 }}>
                                             <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{acc.name}</div>
                                         </div>
-                                        <div style={{ fontSize: '14px', color: saldo >= 0 ? '#4CAF50' : '#f44336' }}>€{saldo.toFixed(2)}</div>
+                                        <div style={{ fontSize: '14px', color: saldo >= 0 ? '#4CAF50' : '#f44336' }}>€{fmtEur(saldo)}</div>
                                         <button onClick={() => {
                                             const all = getCustomTransactionAccounts();
                                             const updated = all.map(a => a.id === acc.id ? { ...a, archived: false } : a);
@@ -4607,7 +4617,7 @@
                                 </div>
                                 <div>
                                     <div className={`transaction-amount ${transaction.type}`}>
-                                        {transaction.type === 'income' ? '+' : '-'}€ {transaction.amount.toFixed(2)}
+                                        {transaction.type === "income" ? "+" : "-"}€ {fmtEur(transaction.amount)}
                                     </div>
                                     <button 
                                         onClick={(e) => { e.stopPropagation(); onDelete(transaction.id); }}
@@ -5030,7 +5040,7 @@
                             style={{ width:'100%', padding:'15px', borderRadius:'12px', border:'none',
                                 background: canSave ? typeColor : '#ccc',
                                 color:'white', fontWeight:'800', fontSize:'16px', cursor: canSave ? 'pointer' : 'not-allowed' }}>
-                            {canSave ? ('&#10003; Salva ' + (type==='expense' ? 'uscita' : 'entrata') + ' \u2014 \u20ac' + parseFloat(amount).toFixed(2)) : ('Scegli categoria e importo')}
+                            {canSave ? ('&#10003; Salva ' + (type==='expense' ? 'uscita' : 'entrata') + ' \u2014 \u20ac' + fmtEur(parseFloat(amount))) : ('Scegli categoria e importo')}
                         </button>
                     </div>
                 </div>
@@ -5166,10 +5176,10 @@
                         <div className="chart-center-info">
 		                    <div className="chart-center-label">{primaryLabel}</div>
 		                    <div className="chart-center-amount" style={{ color: isIncomeMode ? '#4CAF50' : '#f44336' }}>
-		                        {primaryAmount.toFixed(2)} €
+		                        {fmtEur(primaryAmount)} €
 		                    </div>
 		                    <div className="chart-center-budget" style={{ color: isIncomeMode ? '#f44336' : '#4CAF50' }}>
-		                        {secondaryLabel}: {secondaryAmount.toFixed(2)} €
+		                        {secondaryLabel}: {fmtEur(secondaryAmount)} €
 		                    </div>
                         </div>
                     </div>
@@ -5286,7 +5296,7 @@
                                         <span style={{ position: 'relative', zIndex: 1 }}>{category.icon}</span>
                                     </div>
 		                <div className="category-amount" style={{ color: exceeded ? '#f44336' : category.color }}>
-                                        {amount.toFixed(0)} €
+                                        {fmtEur(amount, 0)} €
                                     </div>
                                     <div className="category-name-small">{category.name}</div>
 		                {mode === 'expense' && budget > 0 && (
@@ -5977,7 +5987,7 @@
                                                 fontWeight: 'bold',
                                                 color: isOverBudget ? '#f44336' : '#4CAF50'
                                             }}>
-                                                €{spent.toFixed(2)} / €{budget.toFixed(2)}
+                                                €{fmtEur(spent)} / €{fmtEur(budget)}
                                             </span>
                                         </div>
                                         
@@ -6005,8 +6015,8 @@
                                             textAlign: 'right'
                                         }}>
                                             {isOverBudget ? 
-                                                `Superato di €${(spent - budget).toFixed(2)}` :
-                                                `Rimanente: €${(budget - spent).toFixed(2)}`
+                                                `Superato di €${fmtEur(spent - budget)}` :
+                                                `Rimanente: €${fmtEur(budget - spent)}`
                                             }
                                         </div>
                                     </div>
@@ -6722,7 +6732,7 @@
                                             <div style={{ display:'flex', justifyContent:'space-between' }}>
                                                 <span style={{ color:'#666' }}>Importo</span>
                                                 <span style={{ fontWeight:'800', color:'#f44336', fontSize:'16px' }}>
-                                                    {result.amount ? '€ ' + Number(result.amount).toFixed(2) : '—'}
+                                                    {result.amount ? '€ ' + fmtEur(result.amount) : '—'}
                                                 </span>
                                             </div>
                                             <div style={{ display:'flex', justifyContent:'space-between' }}>
@@ -7718,16 +7728,16 @@
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '15px', marginTop: '15px' }}>
                         <div style={{ textAlign: 'center', padding: '15px', background: '#e8f5e9', borderRadius: '10px' }}>
                             <div style={{ fontSize: '12px', color: '#666', marginBottom: '5px' }}>Entrate</div>
-                            <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#4CAF50' }}>€{income.toFixed(2)}</div>
+                            <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#4CAF50' }}>€{fmtEur(income)}</div>
                         </div>
                         <div style={{ textAlign: 'center', padding: '15px', background: '#ffebee', borderRadius: '10px' }}>
                             <div style={{ fontSize: '12px', color: '#666', marginBottom: '5px' }}>Uscite</div>
-                            <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#f44336' }}>€{expense.toFixed(2)}</div>
+                            <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#f44336' }}>€{fmtEur(expense)}</div>
                         </div>
                         <div style={{ textAlign: 'center', padding: '15px', background: '#e3f2fd', borderRadius: '10px' }}>
                             <div style={{ fontSize: '12px', color: '#666', marginBottom: '5px' }}>Saldo Mese</div>
                             <div style={{ fontSize: '24px', fontWeight: 'bold', color: balance >= 0 ? '#4CAF50' : '#f44336' }}>
-                                €{balance.toFixed(2)}
+                                €{fmtEur(balance)}
                             </div>
                         </div>
                         <div style={{ textAlign: 'center', padding: '15px', background: '#f3e5f5', borderRadius: '10px' }}>
