@@ -2428,25 +2428,17 @@
                             }
 
                             // Tipo transazione
-                            const tipLower = tipologia.toLowerCase().trim(); const type = (tipLower === 'entrata' || tipLower === 'income' || tipLower === 'in') ? 'income' : 'expense';
+                            const tipLower = tipologia.toLowerCase().trim();
+                            const type = (tipLower === 'entrata' || tipLower === 'income' || tipLower === 'in') ? 'income' : 'expense';
 
-                            // Per le ENTRATE i campi sono invertiti in 1Money:
-                            // fields[2] = categoria entrata (es. "Stipendio"), fields[3] = conto destinazione (es. "Banca")
-                            // Per le USCITE: fields[2] = conto sorgente, fields[3] = categoria uscita
-                            const catRaw  = type === 'income' ? dalConto : alContoCategoria;
-                            const accRaw  = type === 'income' ? alContoCategoria : dalConto;
-
-                            // Estrai categoria (prima delle parentesi) e sottocategoria (dentro parentesi)
-                            const catMatch    = catRaw.match(/^([^(]+)/);
-                            const catName     = catMatch ? catMatch[1].trim() : catRaw.trim();
-                            const subCatMatch = catRaw.match(/\(([^)]+)\)/);
+                            // In 1Money CSV: fields[2]=conto (sia entrate che uscite), fields[3]=categoria
+                            const catMatch    = alContoCategoria.match(/^([^(]+)/);
+                            const catName     = catMatch ? catMatch[1].trim() : alContoCategoria.trim();
+                            const subCatMatch = alContoCategoria.match(/\(([^)]+)\)/);
                             const subCat      = subCatMatch ? subCatMatch[1].trim() : '';
 
-                            // Trova o crea categoria
                             const categoryId = getOrCreateCategory(catName, type);
-
-                            // Trova o crea conto
-                            const accountId = getOrCreateAccount(accRaw);
+                            const accountId = getOrCreateAccount(dalConto);
 
                             // Nota: combina sottocategoria + nota originale
                             let finalNote = note || '';
