@@ -5031,6 +5031,331 @@
         }
 
 
+		function CategoriesView({ expenses, budgets, onCategoryClick, onCategoryLongPress, sortMode, setSortMode, mode = 'expense', totalIncome = 0, totalExpense = 0 }) {
+            const [categoryOrder, setCategoryOrder] = React.useState([]);
+            const [draggedItem, setDraggedItem] = React.useState(null);
+            const [dragOverItem, setDragOverItem] = React.useState(null);
+            const [showArchived, setShowArchived] = React.useState(false);
+            const [cats, setCats] = React.useState(getCategoriesFromStorage());
+            // Touch drag state
+            const touchDrag = React.useRef({ active: false, id: null, startY: 0, currentY: 0 });
+            // Long press state
+            const catPressTimer = React.useRef(null);
+            const catLongPressed = React.useRef(false);
+            const catPressPos = React.useRef({ x: 0, y: 0 });
+            // Modalità riordino: gestita dal genitore via props sortMode/setSortMode
+
+            React.useEffect(() => {
+                setCats(getCategoriesFromStorage());
+            }, []);
+
+		    const orderKey = mode === 'income' ? 'categoryOrder_income' : 'categoryOrder';
+
+		    React.useEffect(() => {
+		        const savedOrder = localStorage.getItem(orderKey);
+                if (savedOrder) {
+                    setCategoryOrder(JSON.parse(savedOrder));
+                } else {
+		            setCategoryOrder((cats[mode] || []).map(c => c.id));
+                }
+		    }, [orderKey, mode]);
+
+		    React.useEffect(() => {
+		        if (categoryOrder.length > 0) {
+		            localStorage.setItem(orderKey, JSON.stringify(categoryOrder));
+		        }
+		    }, [categoryOrder, orderKey]);
+
+		    const dataByCategory = expenses || {};
+		    const primaryTotal = Object.values(dataByCategory).reduce((acc, val) => acc + val, 0);
+		    const totalBudget = mode === 'expense' ? Object.values(budgets || {}).reduce((acc, val) => acc + val, 0) : 0;
+
+		    const activeCats = (cats[mode] || []).filter(c => !c.archived);
+		    const archivedCats = (cats[mode] || []).filter(c => c.archived);
+
+            // Ordina le categorie attive
+		    const orderedCategories = categoryOrder
+		        .map(id => activeCats.find(c => c.id === id))
+		        .filter(Boolean);
+            activeCats.forEach(cat => {
+                if (!categoryOrder.includes(cat.id)) orderedCategories.push(cat);
+            });
+
+            // Archivia/ripristina categoria
+		    const toggleArchive = (catId) => {
+		        const updated = getCategoriesFromStorage();
+		        updated[mode] = (updated[mode] || []).map(c =>
+		            c.id === catId ? { ...c, archived: !c.archived } : c
+		        );
+		        saveCategoriestoStorage(updated);
+		        setCats(getCategoriesFromStorage());
+		    };
+
+		    const isIncomeMode = mode === 'income';
+		    const primaryLabel = isIncomeMode ? 'Entrate' : 'Spese';
+		    const primaryAmount = isIncomeMode ? totalIncome : totalExpense;
+		    const secondaryLabel = isIncomeMode ? 'Spese' : 'Entrate';
+		    const secondaryAmount = isIncomeMode ? totalExpense : totalIncome;
+
+            // Desktop drag
+            const handleDragStart = (e, categoryId) => {
+                setDraggedItem(categoryId);
+                e.dataTransfer.effectAllowed = 'move';
+            };
+            const handleDragOver = (e, targetId) => {
+                e.preventDefault();
+                setDragOverItem(targetId);
+            };
+            const handleDrop = (e, targetId) => {
+                e.preventDefault();
+                if (!draggedItem || draggedItem === targetId) { setDraggedItem(null); setDragOverItem(null); return; }
+                const newOrder = [...(categoryOrder.length > 0 ? categoryOrder : orderedCategories.map(c => c.id))];
+                const from = newOrder.indexOf(draggedItem);
+                const to = newOrder.indexOf(targetId);
+                if (from < 0 || to < 0) { setDraggedItem(null); setDragOverItem(null); return; }
+                newOrder.splice(from, 1);
+                newOrder.splice(to, 0, draggedItem);
+                setCategoryOrder(newOrder);
+                setDraggedItem(null);
+                setDragOverItem(null);
+            };
+
+            // Touch drag (mobile)
+            const handleTouchStart = (e, catId) => {
+                touchDrag.current = { active: true, id: catId, startY: e.touches[0].clientY };
+            };
+            const handleTouchMove = (e) => {
+                if (!touchDrag.current.active) return;
+                e.preventDefault();
+                touchDrag.current.currentY = e.touches[0].clientY;
+                // Trova elemento sotto il tocco
+                const el = document.elementFromPoint(e.touches[0].clientX, e.touches[0].clientY);
+                const card = el && el.closest('[data-catid]');
+                if (card) setDragOverItem(card.dataset.catid);
+            };
+            const handleTouchEnd = () => {
+                if (!touchDrag.current.active) return;
+                const from = touchDrag.current.id;
+                const to = dragOverItem;
+                if (from && to && from !== to) {
+                    const newOrder = [...(categoryOrder.length > 0 ? categoryOrder : orderedCategories.map(c => c.id))];
+                    const fi = newOrder.indexOf(from);
+                    const ti = newOrder.indexOf(to);
+                    if (fi >= 0 && ti >= 0) {
+                        newOrder.splice(fi, 1);
+                        newOrder.splice(ti, 0, from);
+                        setCategoryOrder(newOrder);
+                    }
+                }
+                touchDrag.current = { active: false, id: null };
+                setDraggedItem(null);
+                setDragOverItem(null);
+            };
+
+            return (
+                <div className="dashboard-container">
+                    <div className="chart-center-container">
+                        <canvas id="categoryChart" style={{ maxHeight: '280px' }}></canvas>
+                        <div className="chart-center-info">
+		                    <div className="chart-center-label">{primaryLabel}</div>
+		                    <div className="chart-center-amount" style={{ color: isIncomeMode ? '#4CAF50' : '#f44336' }}>
+		                        {primaryAmount.toFixed(2)} €
+		                    </div>
+		                    <div className="chart-center-budget" style={{ color: isIncomeMode ? '#f44336' : '#4CAF50' }}>
+		                        {secondaryLabel}: {secondaryAmount.toFixed(2)} €
+		                    </div>
+                        </div>
+                    </div>
+
+                    {/* Barra modalità riordino */}
+                    {sortMode && (
+                        <div style={{ margin: '0 16px 10px', padding: '10px 16px', background: '#667eea', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'white', fontSize: '13px' }}>
+                            <span>✋ Trascina per riordinare</span>
+                            <button onClick={() => setSortMode(false)} style={{ background: 'white', color: '#667eea', border: 'none', borderRadius: '6px', padding: '4px 10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Fine</button>
+                        </div>
+                    )}
+
+                    {/* Categorie attive */}
+                    <div className="categories-grid">
+		            {orderedCategories.map(category => {
+		                const amount = dataByCategory[category.id] || 0;
+		                const budget = (mode === 'expense' && budgets) ? (budgets[category.id] || 0) : 0;
+                            const exceeded = budget > 0 && amount > budget;
+                            const remaining = budget - amount;
+                            const isDragging = draggedItem === category.id;
+                            const isOver = dragOverItem === category.id && !isDragging;
+
+                            return (
+                                <div
+                                    key={category.id}
+                                    data-catid={category.id}
+                                    className="category-card"
+                                    onClick={(e) => {
+                                        if (sortMode) return;
+                                        if (!catLongPressed.current) onCategoryClick && onCategoryClick(category, e);
+                                    }}
+                                    onTouchStart={(e) => {
+                                        e.stopPropagation();
+                                        catLongPressed.current = false;
+                                        const t = e.touches[0];
+                                        catPressPos.current = { x: t.clientX, y: t.clientY };
+                                        if (sortMode) {
+                                            handleTouchStart(e, category.id);
+                                            return;
+                                        }
+                                        catPressTimer.current = setTimeout(() => {
+                                            catLongPressed.current = true;
+                                            if (navigator.vibrate) navigator.vibrate(40);
+                                            onCategoryLongPress && onCategoryLongPress(category, e);
+                                        }, 500);
+                                    }}
+                                    onTouchMove={(e) => {
+                                        if (sortMode) { handleTouchMove(e); return; }
+                                        const t = e.touches[0];
+                                        const dx = Math.abs(t.clientX - catPressPos.current.x);
+                                        const dy = Math.abs(t.clientY - catPressPos.current.y);
+                                        if (dx > 5 || dy > 5) clearTimeout(catPressTimer.current);
+                                    }}
+                                    onTouchEnd={(e) => {
+                                        clearTimeout(catPressTimer.current);
+                                        if (sortMode) { handleTouchEnd(e); return; }
+                                        // Il click viene gestito da onClick, qui blocchiamo solo il long-press
+                                        if (catLongPressed.current) {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                        }
+                                        catLongPressed.current = false;
+                                    }}
+                                    style={{
+                                        opacity: isDragging ? 0.3 : 1,
+                                        transform: isOver ? 'scale(1.06)' : sortMode ? 'scale(1.02)' : 'scale(1)',
+                                        border: isOver ? '2px dashed #667eea' : sortMode ? '2px dashed #aaa' : '2px solid transparent',
+                                        cursor: sortMode ? 'grab' : 'pointer',
+                                        transition: 'transform 0.15s, border 0.15s, opacity 0.15s',
+                                        position: 'relative',
+                                        userSelect: 'none'
+                                    }}
+                                >
+                                    {/* Tasto archivia — nascosto, accessibile dal menu long-press */}
+
+                                    <div className="category-circle" style={{
+                                        background: amount === 0
+                                            ? `${category.color}22`  // quasi trasparente se vuoto
+                                            : exceeded
+                                                ? category.color      // pieno se superato
+                                                : 'transparent',      // gestito dal fill sotto
+                                        border: exceeded
+                                            ? `3px solid ${category.color}`
+                                            : amount === 0
+                                                ? `2px solid ${category.color}44`
+                                                : `2px solid ${category.color}88`,
+                                        boxShadow: exceeded
+                                            ? `0 0 12px ${category.color}bb, 0 0 24px ${category.color}55`
+                                            : '0 2px 8px rgba(0,0,0,0.1)',
+                                        overflow: 'hidden',
+                                        position: 'relative'
+                                    }}>
+                                        {/* Fill dal basso proporzionale al budget */}
+                                        {amount > 0 && !exceeded && budget > 0 && (
+                                            <div style={{
+                                                position: 'absolute',
+                                                bottom: 0, left: 0, right: 0,
+                                                height: `${Math.min(100, Math.round(amount / budget * 100))}%`,
+                                                background: `${category.color}cc`,
+                                                borderRadius: '0 0 50px 50px',
+                                                transition: 'height 0.4s ease'
+                                            }} />
+                                        )}
+                                        {/* Nessun budget: fill piatto proporzionale al totale spese */}
+                                        {amount > 0 && !exceeded && budget === 0 && (
+                                            <div style={{
+                                                position: 'absolute',
+                                                bottom: 0, left: 0, right: 0,
+                                                height: '40%',
+                                                background: `${category.color}66`,
+                                                borderRadius: '0 0 50px 50px'
+                                            }} />
+                                        )}
+                                        <span style={{ position: 'relative', zIndex: 1 }}>{category.icon}</span>
+                                    </div>
+		                <div className="category-amount" style={{ color: exceeded ? '#f44336' : category.color }}>
+                                        {amount.toFixed(0)} €
+                                    </div>
+                                    <div className="category-name-small">{category.name}</div>
+		                {mode === 'expense' && budget > 0 && (
+                                        <div style={{ fontSize: '10px', marginTop: '2px', lineHeight: 1.2 }}>
+                                            {exceeded ? (
+                                                <span style={{
+                                                    display: 'inline-block',
+                                                    background: '#f44336',
+                                                    color: 'white',
+                                                    fontWeight: 'bold',
+                                                    padding: '1px 5px',
+                                                    borderRadius: '4px',
+                                                    fontSize: '10px'
+                                                }}>+{Math.abs(remaining).toFixed(0)} €</span>
+                                            ) : (
+                                                <span style={{ color: '#aaa' }}>{budget.toFixed(0)} €</span>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* Sezione categorie archiviate */}
+                    {archivedCats.length > 0 && (
+                        <div style={{ marginTop: '20px', padding: '0 5px' }}>
+                            <button
+                                onClick={() => setShowArchived(!showArchived)}
+                                style={{
+                                    width: '100%', padding: '10px', background: '#f5f5f5',
+                                    border: '1px solid #ddd', borderRadius: '10px',
+                                    cursor: 'pointer', fontSize: '13px', color: '#666',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+                                }}
+                            >
+                                📦 {archivedCats.length} {archivedCats.length === 1 ? 'categoria archiviata' : 'categorie archiviate'}
+                                <span style={{ fontSize: '10px' }}>{showArchived ? '▲' : '▼'}</span>
+                            </button>
+
+                            {showArchived && (
+                                <div style={{ marginTop: '10px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: '10px' }}>
+                                    {archivedCats.map(category => (
+                                        <div key={category.id} style={{
+                                            background: '#f9f9f9', borderRadius: '12px', padding: '10px 5px',
+                                            textAlign: 'center', border: '1px dashed #ccc', position: 'relative', opacity: 0.7
+                                        }}>
+                                            <button
+                                                onClick={() => toggleArchive(category.id)}
+                                                title="Ripristina categoria"
+                                                style={{
+                                                    position: 'absolute', top: '4px', right: '4px',
+                                                    background: 'rgba(102,126,234,0.15)', border: 'none',
+                                                    borderRadius: '50%', width: '20px', height: '20px',
+                                                    fontSize: '10px', cursor: 'pointer', lineHeight: '20px',
+                                                    padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                                }}
+                                            >📤</button>
+                                            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#ddd', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', margin: '0 auto 6px' }}>
+                                                {category.icon}
+                                            </div>
+                                            <div style={{ fontSize: '11px', color: '#999' }}>{category.name}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    <div style={{ textAlign: 'center', fontSize: '11px', color: '#bbb', marginTop: '10px', padding: '5px' }}>
+                        📥 archivia · trascina per riordinare
+                    </div>
+                </div>
+            );
+        }
+
         function CategoryContextMenu({ category, x, y, onClose, onAddMovement, onViewMovements, onEditCategory, onBudget, onSort }) {
             React.useEffect(() => {
                 const handleClickOutside = () => onClose();
