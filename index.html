@@ -4258,7 +4258,7 @@
 
                 const doAdjust = () => {
                     const amt = parseFloat(adjustAmt);
-                    if (isNaN(amt) || amt === 0) return;
+                    if (isNaN(amt)) return;
                     const diff = amt - saldo;
                     onAdjustBalance(selectedAcc.id, diff, adjustNote || '⚖️ Aggiustamento saldo');
                     setSelectedAcc(null);
@@ -8085,7 +8085,7 @@
             const ICONS = ['💰','🏦','🏠','🚗','💳','👤','📋','🎓','🏥','💊','🛒','✈️','🚐'];
 
             const handleSave = () => {
-                if (!name.trim() || !total || parseFloat(total) <= 0) return;
+                if (!name.trim() || total === '' || total === null || isNaN(parseFloat(total)) || parseFloat(total) < 0) return;
                 onSave({
                     ...(debt || {}),
                     name: name.trim(), type, totalAmount: parseFloat(total),
