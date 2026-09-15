@@ -1176,6 +1176,7 @@
 
         // ============ VERSIONE APP ============
         const APP_VERSION = '11.5';
+        const ADMIN_UID = 'v4ScYC85pvXfFsJU1SAE44EAYDQ2';
 
         // Formattazione valuta italiana: 30.388,90
         const fmtEur = function(n, decimals) {
@@ -1385,6 +1386,9 @@
                 return () => clearTimeout(t);
             }, []);
             const [showLoginModal, setShowLoginModal] = useState(false);
+            const [userStatus, setUserStatus] = useState(null); // null | 'pending' | 'approved' | 'rejected' | 'suspended'
+            const [pendingCount, setPendingCount] = useState(0);
+            const [showAdminPanel, setShowAdminPanel] = useState(false);
             const [isSyncing, setIsSyncing] = useState(false);
             const [showShareModal, setShowShareModal] = useState(false); // modale condivisione
             const [showJoinModal, setShowJoinModal] = useState(false);   // modale unisciti
@@ -1490,9 +1494,33 @@
                     setAuthLoading(false);
                     if (!firebaseUser) {
                         setShowLoginModal(true);
+                        setUserStatus(null);
                     } else {
                         setShowLoginModal(false);
-                        await initFirestoreData(firebaseUser);
+                        if (firebaseUser.uid === ADMIN_UID) {
+                            setUserStatus('approved');
+                            await initFirestoreData(firebaseUser);
+                            // Admin: ascolta pending count
+                            const { db, collection, query, where, onSnapshot } = window.FB;
+                            onSnapshot(query(collection(db, 'registrations'), where('status', '==', 'pending')),
+                                snap => setPendingCount(snap.size)
+                            );
+                        } else {
+                            // Controlla status utente
+                            try {
+                                const { db, doc, getDoc } = window.FB;
+                                const regDoc = await getDoc(doc(db, 'registrations', firebaseUser.uid));
+                                if (regDoc.exists()) {
+                                    const st = regDoc.data().status;
+                                    setUserStatus(st);
+                                    if (st === 'approved') await initFirestoreData(firebaseUser);
+                                } else {
+                                    setUserStatus('pending');
+                                }
+                            } catch(e) {
+                                setUserStatus('pending');
+                            }
+                        }
                     }
                 });
                 return () => unsubscribe();
@@ -3168,6 +3196,45 @@
                     {/* ── Login Modal ── */}
                     {showLoginModal && <LoginModal onClose={() => setShowLoginModal(false)} />}
 
+                    {/* Schermata in attesa di approvazione */}
+                    {!showLoginModal && user && userStatus === 'pending' && (
+                        <div style={{ position:'fixed', inset:0, zIndex:9998, background:'linear-gradient(135deg,#667eea,#764ba2)', display:'flex', alignItems:'center', justifyContent:'center', padding:'20px' }}>
+                            <div style={{ background:'white', borderRadius:'20px', padding:'30px', maxWidth:'340px', width:'100%', textAlign:'center' }}>
+                                <div style={{ fontSize:'48px', marginBottom:'12px' }}>⏳</div>
+                                <h2 style={{ color:'#667eea', margin:'0 0 10px' }}>Richiesta inviata!</h2>
+                                <p style={{ color:'#666', fontSize:'14px', margin:'0 0 20px' }}>
+                                    La tua registrazione è in attesa di approvazione dall'amministratore. Riceverai accesso non appena sarà approvata.
+                                </p>
+                                <button onClick={() => window.FB.signOut(window.FB.auth)}
+                                    style={{ padding:'12px 24px', border:'none', borderRadius:'10px', background:'#f0f0f0', color:'#666', cursor:'pointer', fontSize:'14px' }}>
+                                    Esci
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Schermata rifiutato/sospeso */}
+                    {!showLoginModal && user && (userStatus === 'rejected' || userStatus === 'suspended') && (
+                        <div style={{ position:'fixed', inset:0, zIndex:9998, background:'linear-gradient(135deg,#e53935,#b71c1c)', display:'flex', alignItems:'center', justifyContent:'center', padding:'20px' }}>
+                            <div style={{ background:'white', borderRadius:'20px', padding:'30px', maxWidth:'340px', width:'100%', textAlign:'center' }}>
+                                <div style={{ fontSize:'48px', marginBottom:'12px' }}>{userStatus === 'suspended' ? '🚫' : '❌'}</div>
+                                <h2 style={{ color:'#e53935', margin:'0 0 10px' }}>{userStatus === 'suspended' ? 'Account sospeso' : 'Accesso non autorizzato'}</h2>
+                                <p style={{ color:'#666', fontSize:'14px', margin:'0 0 20px' }}>
+                                    {userStatus === 'suspended' ? 'Il tuo account è stato sospeso. Contatta l'amministratore.' : 'La tua richiesta di registrazione è stata rifiutata.'}
+                                </p>
+                                <button onClick={() => window.FB.signOut(window.FB.auth)}
+                                    style={{ padding:'12px 24px', border:'none', borderRadius:'10px', background:'#e53935', color:'white', cursor:'pointer', fontSize:'14px', fontWeight:'700' }}>
+                                    Esci
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Pannello Admin */}
+                    {showAdminPanel && user?.uid === ADMIN_UID && (
+                        <AdminPanel onClose={() => setShowAdminPanel(false)} />
+                    )}
+
                     {/* ── Share Modal ── */}
                     {showShareModal && user && (
                         <ShareModal
@@ -3285,6 +3352,20 @@
                                         {syncStatus === 'idle'    && '☁️'}
                                     </button>
                                 )}
+                                {/* Badge admin */}
+                                {user && user.uid === ADMIN_UID && (
+                                    <button onClick={() => setShowAdminPanel(true)}
+                                        style={{ position:'relative', background:'rgba(255,255,255,0.2)', border:'none', color:'white', padding:'6px 10px', borderRadius:'8px', cursor:'pointer', fontSize:'18px' }}
+                                        title="Pannello Admin">
+                                        🛡️
+                                        {pendingCount > 0 && (
+                                            <span style={{ position:'absolute', top:'-4px', right:'-4px', background:'#e53935', color:'white', borderRadius:'50%', width:'18px', height:'18px', fontSize:'11px', fontWeight:'800', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                                                {pendingCount}
+                                            </span>
+                                        )}
+                                    </button>
+                                )}
+
                                 {/* Avatar utente / login */}
                                 {user ? (
                                     <button
@@ -8255,16 +8336,31 @@
         function LoginModal({ onClose }) {
             const [email, setEmail] = useState('');
             const [password, setPassword] = useState('');
+            const [nome, setNome] = useState('');
             const [isSignup, setIsSignup] = useState(false);
             const [loading, setLoading] = useState(false);
             const [error, setError] = useState('');
+            const [loginFailed, setLoginFailed] = useState(false);
+            const [resetSent, setResetSent] = useState(false);
 
             const handleGoogleLogin = async () => {
                 if (!window.FB_READY) return;
                 setLoading(true); setError('');
                 try {
                     const provider = new window.FB.GoogleAuthProvider();
-                    await window.FB.signInWithPopup(window.FB.auth, provider);
+                    const cred = await window.FB.signInWithPopup(window.FB.auth, provider);
+                    // Crea registrazione se non esiste
+                    const { db, doc, getDoc, setDoc } = window.FB;
+                    const ref = doc(db, 'registrations', cred.user.uid);
+                    const existing = await getDoc(ref);
+                    if (!existing.exists()) {
+                        await setDoc(ref, {
+                            uid: cred.user.uid, email: cred.user.email,
+                            nome: cred.user.displayName || cred.user.email.split('@')[0],
+                            status: cred.user.uid === ADMIN_UID ? 'approved' : 'pending',
+                            requestDate: new Date().toISOString()
+                        });
+                    }
                     onClose();
                 } catch(e) {
                     setError(e.message || 'Errore login Google');
@@ -8273,14 +8369,23 @@
 
             const handleEmailLogin = async () => {
                 if (!window.FB_READY || !email || !password) return;
-                setLoading(true); setError('');
+                setLoading(true); setError(''); setLoginFailed(false);
                 try {
                     if (isSignup) {
-                        await window.FB.createUserWithEmailAndPassword(window.FB.auth, email, password);
+                        if (!nome.trim()) { setError('Inserisci il tuo nome'); setLoading(false); return; }
+                        const cred = await window.FB.createUserWithEmailAndPassword(window.FB.auth, email, password);
+                        // Crea documento di registrazione
+                        const { db, doc, setDoc } = window.FB;
+                        await setDoc(doc(db, 'registrations', cred.user.uid), {
+                            uid: cred.user.uid, email, nome: nome.trim(),
+                            status: cred.user.uid === ADMIN_UID ? 'approved' : 'pending',
+                            requestDate: new Date().toISOString()
+                        });
+                        onClose();
                     } else {
                         await window.FB.signInWithEmailAndPassword(window.FB.auth, email, password);
+                        onClose();
                     }
-                    onClose();
                 } catch(e) {
                     const msgs = {
                         'auth/user-not-found': 'Account non trovato',
@@ -8291,6 +8396,18 @@
                         'auth/invalid-credential': 'Email o password errati'
                     };
                     setError(msgs[e.code] || e.message);
+                    if (!isSignup) setLoginFailed(true);
+                } finally { setLoading(false); }
+            };
+
+            const handleResetPassword = async () => {
+                if (!email) { setError('Inserisci la tua email prima di richiedere il reset'); return; }
+                setLoading(true);
+                try {
+                    await window.FB.sendPasswordResetEmail(window.FB.auth, email);
+                    setResetSent(true); setError('');
+                } catch(e) {
+                    setError('Errore invio email: ' + (e.message || ''));
                 } finally { setLoading(false); }
             };
 
@@ -8336,61 +8453,250 @@
                             <div style={{ flex: 1, height: '1px', background: '#eee' }} />
                         </div>
 
-                        {/* Email / Password */}
+                        {/* Campo nome solo in registrazione */}
+                        {isSignup && (
+                            <input type="text" placeholder="Il tuo nome *" value={nome}
+                                onChange={e => setNome(e.target.value)}
+                                style={{ width:'100%', padding:'12px', marginBottom:'10px', border:'1px solid #e0e0e0', borderRadius:'8px', fontSize:'14px', boxSizing:'border-box', outline:'none' }} />
+                        )}
+
                         <input type="email" placeholder="Email" value={email}
                             onChange={e => setEmail(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && handleEmailLogin()}
-                            style={{
-                                width: '100%', padding: '12px', marginBottom: '10px',
-                                border: '1px solid #e0e0e0', borderRadius: '8px',
-                                fontSize: '14px', boxSizing: 'border-box', outline: 'none'
-                            }}
-                        />
+                            style={{ width:'100%', padding:'12px', marginBottom:'10px', border:'1px solid #e0e0e0', borderRadius:'8px', fontSize:'14px', boxSizing:'border-box', outline:'none' }} />
+
                         <input type="password" placeholder="Password" value={password}
                             onChange={e => setPassword(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && handleEmailLogin()}
-                            style={{
-                                width: '100%', padding: '12px', marginBottom: '14px',
-                                border: '1px solid #e0e0e0', borderRadius: '8px',
-                                fontSize: '14px', boxSizing: 'border-box', outline: 'none'
-                            }}
-                        />
+                            style={{ width:'100%', padding:'12px', marginBottom:'14px', border:'1px solid #e0e0e0', borderRadius:'8px', fontSize:'14px', boxSizing:'border-box', outline:'none' }} />
 
                         {error && (
-                            <div style={{
-                                background: '#fff0f0', color: '#c62828', padding: '10px 12px',
-                                borderRadius: '8px', fontSize: '13px', marginBottom: '12px',
-                                border: '1px solid #ffcdd2'
-                            }}>⚠️ {error}</div>
+                            <div style={{ background:'#fff0f0', color:'#c62828', padding:'10px 12px', borderRadius:'8px', fontSize:'13px', marginBottom:'12px', border:'1px solid #ffcdd2' }}>
+                                ⚠️ {error}
+                            </div>
+                        )}
+
+                        {resetSent && (
+                            <div style={{ background:'#e8f5e9', color:'#2e7d32', padding:'10px 12px', borderRadius:'8px', fontSize:'13px', marginBottom:'12px' }}>
+                                ✅ Email di reset inviata! Controlla la casella di posta.
+                            </div>
                         )}
 
                         <button onClick={handleEmailLogin} disabled={loading} style={{
-                            width: '100%', padding: '13px',
-                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                            color: 'white', border: 'none', borderRadius: '10px',
-                            fontSize: '15px', fontWeight: '700', cursor: 'pointer',
-                            opacity: loading ? 0.7 : 1
+                            width:'100%', padding:'13px',
+                            background:'linear-gradient(135deg,#667eea 0%,#764ba2 100%)',
+                            color:'white', border:'none', borderRadius:'10px',
+                            fontSize:'15px', fontWeight:'700', cursor:'pointer', opacity: loading ? 0.7 : 1
                         }}>
-                            {loading ? '⏳ Attendi...' : (isSignup ? 'Registrati' : 'Accedi')}
+                            {loading ? '⏳ Attendi...' : (isSignup ? '📝 Invia richiesta' : 'Accedi')}
                         </button>
 
-                        <div style={{ textAlign: 'center', marginTop: '16px' }}>
-                            <button onClick={() => { setIsSignup(!isSignup); setError(''); }} style={{
-                                background: 'none', border: 'none', color: '#667eea',
-                                cursor: 'pointer', fontSize: '13px', textDecoration: 'underline'
+                        {/* Reset password — visibile solo dopo errore di login */}
+                        {loginFailed && !isSignup && (
+                            <div style={{ textAlign:'center', marginTop:'10px' }}>
+                                <button onClick={handleResetPassword} disabled={loading} style={{
+                                    background:'none', border:'none', color:'#e53935',
+                                    cursor:'pointer', fontSize:'13px', textDecoration:'underline'
+                                }}>
+                                    🔑 Password dimenticata? Invia reset via email
+                                </button>
+                            </div>
+                        )}
+
+                        <div style={{ textAlign:'center', marginTop:'12px' }}>
+                            <button onClick={() => { setIsSignup(!isSignup); setError(''); setLoginFailed(false); setResetSent(false); }} style={{
+                                background:'none', border:'none', color:'#667eea',
+                                cursor:'pointer', fontSize:'13px', textDecoration:'underline'
                             }}>
                                 {isSignup ? 'Hai già un account? Accedi' : 'Non hai un account? Registrati'}
                             </button>
                         </div>
 
-                        {/* Opzione offline */}
-                        <div style={{ textAlign: 'center', marginTop: '20px', borderTop: '1px solid #f0f0f0', paddingTop: '16px' }}>
-                            <button onClick={onClose} style={{
-                                background: 'none', border: 'none', color: '#aaa',
-                                cursor: 'pointer', fontSize: '12px'
-                            }}>
+                        {isSignup && (
+                            <div style={{ background:'#fff8e1', borderRadius:'8px', padding:'10px 12px', marginTop:'12px', fontSize:'12px', color:'#e65100' }}>
+                                ℹ️ La registrazione richiede l'approvazione dell'amministratore. Riceverai accesso entro breve.
+                            </div>
+                        )}
+
+                        <div style={{ textAlign:'center', marginTop:'16px', borderTop:'1px solid #f0f0f0', paddingTop:'14px' }}>
+                            <button onClick={onClose} style={{ background:'none', border:'none', color:'#aaa', cursor:'pointer', fontSize:'12px' }}>
                                 Continua senza account (solo locale)
                             </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+
+        // ============ ADMIN PANEL ============
+        function AdminPanel({ onClose }) {
+            var [tab, setTab] = React.useState('pending');
+            var [users, setUsers] = React.useState([]);
+            var [loading, setLoading] = React.useState(true);
+            var [msg, setMsg] = React.useState('');
+
+            React.useEffect(function() {
+                if (!window.FB_READY) return;
+                var { db, collection, onSnapshot, orderBy, query } = window.FB;
+                var unsub = onSnapshot(query(collection(db, 'registrations'), orderBy('requestDate', 'desc')),
+                    function(snap) {
+                        setUsers(snap.docs.map(function(d) { return Object.assign({ id: d.id }, d.data()); }));
+                        setLoading(false);
+                    }
+                );
+                return unsub;
+            }, []);
+
+            var pending   = users.filter(function(u) { return u.status === 'pending'; });
+            var approved  = users.filter(function(u) { return u.status === 'approved'; });
+            var others    = users.filter(function(u) { return u.status !== 'pending' && u.status !== 'approved'; });
+
+            var setStatus = async function(uid, status) {
+                var { db, doc, updateDoc } = window.FB;
+                await updateDoc(doc(db, 'registrations', uid), { status, updatedDate: new Date().toISOString() });
+                setMsg(status === 'approved' ? 'Utente approvato!' : status === 'suspended' ? 'Utente sospeso' : 'Stato aggiornato');
+                setTimeout(function() { setMsg(''); }, 3000);
+            };
+
+            var resetPassword = async function(email) {
+                try {
+                    await window.FB.sendPasswordResetEmail(window.FB.auth, email);
+                    setMsg('Email di reset inviata a ' + email);
+                    setTimeout(function() { setMsg(''); }, 4000);
+                } catch(e) { setMsg('Errore: ' + e.message); }
+            };
+
+            var deleteUserData = async function(uid, email) {
+                if (!window.confirm('Eliminare tutti i dati di ' + email + '?
+
+Questa azione non è reversibile!')) return;
+                var { db, doc, deleteDoc, collection, getDocs, query, where } = window.FB;
+                // Elimina documento utente in Firestore
+                try { await deleteDoc(doc(db, 'users', uid)); } catch(e) {}
+                // Elimina registrazione
+                try { await deleteDoc(doc(db, 'registrations', uid)); } catch(e) {}
+                setMsg('Dati eliminati. Vai su Firebase Console → Authentication per eliminare l'account.');
+                setTimeout(function() { setMsg(''); }, 6000);
+            };
+
+            var tabStyle = function(t) {
+                return { padding:'8px 16px', border:'none', borderRadius:'20px', cursor:'pointer', fontWeight:'700', fontSize:'13px',
+                    background: tab === t ? '#667eea' : '#f0f0f0', color: tab === t ? 'white' : '#666', position:'relative' };
+            };
+
+            var UserCard = function(props) {
+                var u = props.u;
+                return (
+                    <div style={{ background:'white', borderRadius:'12px', padding:'14px', marginBottom:'10px', boxShadow:'0 2px 8px rgba(0,0,0,0.08)' }}>
+                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'8px' }}>
+                            <div>
+                                <div style={{ fontWeight:'800', fontSize:'15px', color:'#333' }}>{u.nome || '—'}</div>
+                                <div style={{ fontSize:'12px', color:'#888', marginTop:'2px' }}>{u.email}</div>
+                                <div style={{ fontSize:'11px', color:'#bbb', marginTop:'2px' }}>
+                                    Richiesta: {u.requestDate ? new Date(u.requestDate).toLocaleDateString('it-IT') : '—'}
+                                </div>
+                            </div>
+                            <span style={{ padding:'4px 8px', borderRadius:'10px', fontSize:'11px', fontWeight:'700',
+                                background: u.status==='approved' ? '#e8f5e9' : u.status==='pending' ? '#fff8e1' : '#ffebee',
+                                color: u.status==='approved' ? '#2e7d32' : u.status==='pending' ? '#e65100' : '#c62828' }}>
+                                {u.status === 'approved' ? '✅ Approvato' : u.status === 'pending' ? '⏳ In attesa' : u.status === 'suspended' ? '🚫 Sospeso' : '❌ Rifiutato'}
+                            </span>
+                        </div>
+                        <div style={{ display:'flex', gap:'6px', flexWrap:'wrap' }}>
+                            {u.status === 'pending' && (
+                                <button onClick={function() { setStatus(u.id, 'approved'); }}
+                                    style={{ padding:'6px 12px', border:'none', borderRadius:'8px', background:'#4caf50', color:'white', cursor:'pointer', fontSize:'12px', fontWeight:'700' }}>
+                                    ✅ Approva
+                                </button>
+                            )}
+                            {u.status === 'pending' && (
+                                <button onClick={function() { setStatus(u.id, 'rejected'); }}
+                                    style={{ padding:'6px 12px', border:'none', borderRadius:'8px', background:'#f44336', color:'white', cursor:'pointer', fontSize:'12px', fontWeight:'700' }}>
+                                    ❌ Rifiuta
+                                </button>
+                            )}
+                            {u.status === 'approved' && u.id !== ADMIN_UID && (
+                                <button onClick={function() { setStatus(u.id, 'suspended'); }}
+                                    style={{ padding:'6px 12px', border:'none', borderRadius:'8px', background:'#ff9800', color:'white', cursor:'pointer', fontSize:'12px', fontWeight:'700' }}>
+                                    🚫 Sospendi
+                                </button>
+                            )}
+                            {u.status === 'suspended' && (
+                                <button onClick={function() { setStatus(u.id, 'approved'); }}
+                                    style={{ padding:'6px 12px', border:'none', borderRadius:'8px', background:'#4caf50', color:'white', cursor:'pointer', fontSize:'12px', fontWeight:'700' }}>
+                                    ✅ Riattiva
+                                </button>
+                            )}
+                            {u.id !== ADMIN_UID && (
+                                <button onClick={function() { resetPassword(u.email); }}
+                                    style={{ padding:'6px 12px', border:'none', borderRadius:'8px', background:'#667eea', color:'white', cursor:'pointer', fontSize:'12px', fontWeight:'700' }}>
+                                    🔑 Reset pwd
+                                </button>
+                            )}
+                            {u.id !== ADMIN_UID && (
+                                <button onClick={function() { deleteUserData(u.id, u.email); }}
+                                    style={{ padding:'6px 12px', border:'none', borderRadius:'8px', background:'#ffebee', color:'#c62828', cursor:'pointer', fontSize:'12px', fontWeight:'700' }}>
+                                    🗑️ Elimina dati
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                );
+            };
+
+            return (
+                <div style={{ position:'fixed', inset:0, zIndex:10000, background:'rgba(0,0,0,0.6)', display:'flex', alignItems:'flex-end' }}>
+                    <div style={{ background:'#f8f9fa', width:'100%', borderRadius:'20px 20px 0 0', maxHeight:'90vh', display:'flex', flexDirection:'column' }}>
+                        {/* Header */}
+                        <div style={{ padding:'16px 20px', background:'linear-gradient(135deg,#667eea,#764ba2)', borderRadius:'20px 20px 0 0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                            <div>
+                                <div style={{ color:'white', fontWeight:'800', fontSize:'18px' }}>🛡️ Pannello Admin</div>
+                                <div style={{ color:'rgba(255,255,255,0.8)', fontSize:'12px' }}>{users.length} utenti totali · {pending.length} in attesa</div>
+                            </div>
+                            <button onClick={onClose} style={{ background:'rgba(255,255,255,0.2)', border:'none', color:'white', width:'32px', height:'32px', borderRadius:'50%', cursor:'pointer', fontSize:'18px' }}>×</button>
+                        </div>
+
+                        {/* Messaggio feedback */}
+                        {msg && (
+                            <div style={{ background:'#e8f5e9', color:'#2e7d32', padding:'10px 20px', fontSize:'13px', fontWeight:'700' }}>
+                                ✅ {msg}
+                            </div>
+                        )}
+
+                        {/* Tab */}
+                        <div style={{ padding:'12px 16px', display:'flex', gap:'8px', background:'white', borderBottom:'1px solid #f0f0f0', flexShrink:0 }}>
+                            <button style={tabStyle('pending')} onClick={function() { setTab('pending'); }}>
+                                ⏳ In attesa
+                                {pending.length > 0 && <span style={{ position:'absolute', top:'-4px', right:'-4px', background:'#e53935', color:'white', borderRadius:'50%', width:'16px', height:'16px', fontSize:'10px', display:'flex', alignItems:'center', justifyContent:'center' }}>{pending.length}</span>}
+                            </button>
+                            <button style={tabStyle('approved')} onClick={function() { setTab('approved'); }}>✅ Approvati ({approved.length})</button>
+                            <button style={tabStyle('others')} onClick={function() { setTab('others'); }}>🚫 Altri ({others.length})</button>
+                        </div>
+
+                        {/* Lista */}
+                        <div style={{ flex:1, overflowY:'auto', padding:'16px' }}>
+                            {loading && <div style={{ textAlign:'center', color:'#999', padding:'30px' }}>⏳ Caricamento...</div>}
+                            {!loading && tab === 'pending' && (
+                                pending.length === 0
+                                    ? <div style={{ textAlign:'center', color:'#bbb', padding:'30px' }}>Nessuna richiesta in attesa 🎉</div>
+                                    : pending.map(function(u) { return <UserCard key={u.id} u={u} />; })
+                            )}
+                            {!loading && tab === 'approved' && (
+                                approved.length === 0
+                                    ? <div style={{ textAlign:'center', color:'#bbb', padding:'30px' }}>Nessun utente approvato</div>
+                                    : approved.map(function(u) { return <UserCard key={u.id} u={u} />; })
+                            )}
+                            {!loading && tab === 'others' && (
+                                others.length === 0
+                                    ? <div style={{ textAlign:'center', color:'#bbb', padding:'30px' }}>Nessuno</div>
+                                    : others.map(function(u) { return <UserCard key={u.id} u={u} />; })
+                            )}
+                        </div>
+
+                        {/* Footer info */}
+                        <div style={{ padding:'12px 16px', background:'white', borderTop:'1px solid #f0f0f0', fontSize:'11px', color:'#bbb', textAlign:'center' }}>
+                            Per eliminare l'account Auth vai su Firebase Console → Authentication → Users
                         </div>
                     </div>
                 </div>
