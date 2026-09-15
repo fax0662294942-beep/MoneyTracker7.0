@@ -31,13 +31,13 @@
         import {
             getAuth, GoogleAuthProvider, signInWithPopup,
             signInWithEmailAndPassword, createUserWithEmailAndPassword,
-            onAuthStateChanged, signOut,
+            onAuthStateChanged, signOut, sendPasswordResetEmail,
             reauthenticateWithCredential, reauthenticateWithPopup, EmailAuthProvider
         } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
         import {
             getFirestore, enableIndexedDbPersistence,
-            doc, setDoc, getDoc, collection, getDocs, addDoc, deleteDoc,
-            onSnapshot, query, where, serverTimestamp
+            doc, setDoc, getDoc, updateDoc, collection, getDocs, addDoc, deleteDoc,
+            onSnapshot, query, where, orderBy, serverTimestamp
         } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 
         const firebaseConfig = {
@@ -64,10 +64,10 @@
             auth, db,
             GoogleAuthProvider, signInWithPopup,
             signInWithEmailAndPassword, createUserWithEmailAndPassword,
-            onAuthStateChanged, signOut,
+            onAuthStateChanged, signOut, sendPasswordResetEmail,
             reauthenticateWithCredential, reauthenticateWithPopup, EmailAuthProvider,
-            doc, setDoc, getDoc, collection, getDocs, addDoc, deleteDoc,
-            onSnapshot, query, where, serverTimestamp
+            doc, setDoc, getDoc, updateDoc, collection, getDocs, addDoc, deleteDoc,
+            onSnapshot, query, where, orderBy, serverTimestamp
         };
         window.FB_READY = true;
         document.dispatchEvent(new Event('fb-ready'));
