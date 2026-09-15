@@ -7180,6 +7180,20 @@
                                 <div style={{ fontSize: '11px', color: '#bbb', marginTop: '2px' }}>
                                     Firebase · Offline-first · PWA
                                 </div>
+                                {window.FB_READY && window.FB?.auth?.currentUser && (
+                                    <div style={{ marginTop: '10px', padding: '8px 12px', background: '#f5f5f5', borderRadius: '8px', cursor: 'pointer' }}
+                                        onClick={() => {
+                                            const uid = window.FB.auth.currentUser.uid;
+                                            navigator.clipboard && navigator.clipboard.writeText(uid);
+                                            alert('Il tuo UID:\n' + uid + '\n\n(copiato negli appunti)');
+                                        }}>
+                                        <div style={{ fontSize: '10px', color: '#999', marginBottom: '2px' }}>Il tuo User ID</div>
+                                        <div style={{ fontSize: '10px', fontFamily: 'monospace', color: '#667eea', wordBreak: 'break-all' }}>
+                                            {window.FB.auth.currentUser.uid}
+                                        </div>
+                                        <div style={{ fontSize: '10px', color: '#bbb', marginTop: '2px' }}>Tap per copiare</div>
+                                    </div>
+                                )}
                             </div>
 
                             <button type="submit" className="submit-btn">
