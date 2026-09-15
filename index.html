@@ -4584,7 +4584,30 @@
             const getAccountInfo = (accountId) => {
                 const allAccs = getAccountsFilter();
                 const acc = allAccs.find(a => a.id === accountId);
-                return acc || { name: accountId || 'Sconosciuto', icon: '❓' };
+                return acc || { name: accountId || 'Sconosciuto', icon: '🏦' };
+            };
+
+            // Raggruppa per giorno
+            const groupByDay = (txs) => {
+                const groups = {};
+                txs.forEach(t => {
+                    const d = new Date(t.date);
+                    const key = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+                    if (!groups[key]) groups[key] = { date: d, transactions: [], total: 0 };
+                    groups[key].transactions.push(t);
+                    groups[key].total += t.type === 'income' ? t.amount : -t.amount;
+                });
+                return Object.keys(groups).sort((a,b) => b.localeCompare(a)).map(k => groups[k]);
+            };
+
+            const formatDayHeader = (date) => {
+                const months = ['GENNAIO','FEBBRAIO','MARZO','APRILE','MAGGIO','GIUGNO','LUGLIO','AGOSTO','SETTEMBRE','OTTOBRE','NOVEMBRE','DICEMBRE'];
+                const days = ['DOMENICA','LUNEDI','MARTEDI','MERCOLEDI','GIOVEDI','VENERDI','SABATO'];
+                const today = new Date(); today.setHours(0,0,0,0);
+                const d = new Date(date); d.setHours(0,0,0,0);
+                const diff = (d - today) / 86400000;
+                const prefix = diff === 0 ? 'OGGI' : diff === -1 ? 'IERI' : days[date.getDay()];
+                return { day: date.getDate(), label: prefix + ' ' + months[date.getMonth()] + ' ' + date.getFullYear() };
             };
 
             // Long-press logic
@@ -4600,138 +4623,128 @@
                 pressTimer.current = setTimeout(() => {
                     didLongPress.current = true;
                     if (navigator.vibrate) navigator.vibrate(40);
-                    // Usa il callback esterno se disponibile (evita z-index issues)
                     if (onLongPress) onLongPress(transaction);
                     else setEditingTransaction(transaction);
                 }, 500);
             };
 
-            const cancelPress = (e) => {
-                if (pressTimer.current) {
-                    clearTimeout(pressTimer.current);
-                    pressTimer.current = null;
-                }
-            };
-
+            const cancelPress = () => { if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; } };
             const movePress = (e) => {
                 const clientX = e.touches ? e.touches[0].clientX : e.clientX;
                 const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-                const dx = Math.abs(clientX - pressStartPos.current.x);
-                const dy = Math.abs(clientY - pressStartPos.current.y);
-                // Solo se si sta davvero scrollando (soglia più alta per mobile)
-                if (dx > 15 || dy > 15) cancelPress();
+                if (Math.abs(clientX - pressStartPos.current.x) > 15 || Math.abs(clientY - pressStartPos.current.y) > 15) cancelPress();
             };
+            const handleClick = (e) => { if (didLongPress.current) { e.preventDefault(); e.stopPropagation(); } };
 
-            const handleClick = (e) => {
-                // Blocca il click normale se era un long-press
-                if (didLongPress.current) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                }
-            };
+            const groups = groupByDay(transactions);
 
             return (
                 <>
-                <ul className="transaction-list">
-                    {transactions.map(transaction => {
-                        const category = getCategoryInfo(transaction.type, transaction.category);
-                        const account = getAccountInfo(transaction.account || 'cash');
+                <div style={{ paddingBottom: '8px' }}>
+                    {groups.map((group, gi) => {
+                        const header = formatDayHeader(group.date);
+                        const dayTotal = group.total;
                         return (
-                            <li
-                                key={transaction.id}
-                                className="transaction-item"
-                                onMouseDown={e => startPress(e, transaction)}
-                                onMouseUp={cancelPress}
-                                onMouseLeave={cancelPress}
-                                onMouseMove={movePress}
-                                onTouchStart={e => startPress(e, transaction)}
-                                onTouchEnd={(e) => {
-                                    if (didLongPress.current) {
-                                        // Era long-press: blocca il click successivo
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        didLongPress.current = false;
-                                    } else {
-                                        // Era tap normale: cancella il timer
-                                        cancelPress();
-                                    }
-                                }}
-                                onTouchMove={movePress}
-                                onClick={handleClick}
-                                style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
-                            >
-                                <div style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
-                                    <div 
-                                        className="transaction-icon"
-                                        style={{ backgroundColor: category.color + '20' }}
-                                    >
-                                        {category.icon}
+                            <div key={gi}>
+                                {/* Header giornaliero */}
+                                <div style={{ display:'flex', alignItems:'center', padding:'12px 16px 6px', borderBottom:'1px solid #f0f0f0', marginTop: gi > 0 ? '4px' : '0' }}>
+                                    <div style={{ fontSize:'32px', fontWeight:'900', color:'#ccc', lineHeight:1, minWidth:'44px' }}>
+                                        {header.day}
                                     </div>
-                                    <div className="transaction-info">
-                                        <div className="transaction-category">{category.name}</div>
-                                        <div className="transaction-date">
-                                            {new Date(transaction.date).toLocaleDateString('it-IT')} • {account.icon} {account.name}
+                                    <div style={{ flex:1, marginLeft:'10px' }}>
+                                        <div style={{ fontSize:'11px', color:'#999', fontWeight:'700', letterSpacing:'0.5px' }}>
+                                            {header.label}
                                         </div>
-                                        {transaction.note && (
-                                            <div className="transaction-date">{transaction.note}</div>
-                                        )}
-                                        {transaction.tags && transaction.tags.length > 0 && (
-                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '3px' }}>
-                                                {transaction.tags.map(tagId => {
-                                                    const tag = getTagsFromStorage().find(t => t.id === tagId);
-                                                    if (!tag) return null;
-                                                    return (
-                                                        <span key={tagId} style={{
-                                                            fontSize: '10px', padding: '1px 7px',
-                                                            borderRadius: '10px', background: tag.color + '25',
-                                                            color: tag.color, border: '1px solid ' + tag.color + '60',
-                                                            fontWeight: 'bold'
-                                                        }}>#{tag.name}</span>
-                                                    );
-                                                })}
+                                    </div>
+                                    <div style={{ fontSize:'14px', fontWeight:'800', color: dayTotal >= 0 ? '#2e7d32' : '#c62828' }}>
+                                        {dayTotal >= 0 ? '+' : ''}{fmtEur(dayTotal)} €
+                                    </div>
+                                </div>
+
+                                {/* Transazioni del giorno */}
+                                {group.transactions.map(transaction => {
+                                    const category = getCategoryInfo(transaction.type, transaction.category);
+                                    const account = getAccountInfo(transaction.account || 'cash');
+                                    const isIncome = transaction.type === 'income';
+                                    return (
+                                        <div key={transaction.id}
+                                            onMouseDown={e => startPress(e, transaction)}
+                                            onMouseUp={cancelPress}
+                                            onMouseLeave={cancelPress}
+                                            onMouseMove={movePress}
+                                            onTouchStart={e => startPress(e, transaction)}
+                                            onTouchEnd={(e) => {
+                                                if (didLongPress.current) { e.preventDefault(); e.stopPropagation(); didLongPress.current = false; }
+                                                else cancelPress();
+                                            }}
+                                            onTouchMove={movePress}
+                                            onClick={handleClick}
+                                            style={{ display:'flex', alignItems:'center', padding:'10px 16px', borderBottom:'1px solid #f8f8f8', userSelect:'none', WebkitUserSelect:'none', background:'white' }}>
+
+                                            {/* Icona categoria */}
+                                            <div style={{ width:'42px', height:'42px', borderRadius:'50%', background: (category.color || '#667eea') + '20', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'20px', flexShrink:0, marginRight:'12px' }}>
+                                                {category.icon}
                                             </div>
-                                        )}
-                                    </div>
-                                </div>
-                                <div>
-                                    <div className={`transaction-amount ${transaction.type}`}>
-                                        {transaction.type === "income" ? "+" : "-"}€ {fmtEur(transaction.amount)}
-                                    </div>
-                                    <button 
-                                        onClick={(e) => { e.stopPropagation(); onDelete(transaction.id); }}
-                                        style={{
-                                            background: 'none',
-                                            border: 'none',
-                                            color: '#f44336',
-                                            cursor: 'pointer',
-                                            fontSize: '12px',
-                                            marginTop: '5px'
-                                        }}
-                                    >
-                                        Elimina
-                                    </button>
-                                </div>
-                            </li>
+
+                                            {/* Info */}
+                                            <div style={{ flex:1, minWidth:0 }}>
+                                                <div style={{ fontWeight:'700', fontSize:'14px', color:'#222', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                                                    {category.name}
+                                                </div>
+                                                <div style={{ fontSize:'12px', color:'#999', display:'flex', alignItems:'center', gap:'4px', marginTop:'1px' }}>
+                                                    {account.icon || '🏦'} {account.name}
+                                                </div>
+                                                {transaction.note && (
+                                                    <div style={{ fontSize:'11px', color:'#bbb', fontStyle:'italic', marginTop:'1px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                                                        {transaction.note}
+                                                    </div>
+                                                )}
+                                                {transaction.tags && transaction.tags.length > 0 && (
+                                                    <div style={{ display:'flex', gap:'3px', marginTop:'3px', flexWrap:'wrap' }}>
+                                                        {transaction.tags.map(tagId => {
+                                                            const tag = getTagsFromStorage().find(t => t.id === tagId);
+                                                            if (!tag) return null;
+                                                            return <span key={tagId} style={{ fontSize:'10px', padding:'1px 6px', borderRadius:'8px', background:tag.color+'25', color:tag.color, border:'1px solid '+tag.color+'60', fontWeight:'700' }}>#{tag.name}</span>;
+                                                        })}
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Importo + elimina */}
+                                            <div style={{ textAlign:'right', marginLeft:'8px', flexShrink:0 }}>
+                                                <div style={{ fontWeight:'800', fontSize:'14px', color: isIncome ? '#2e7d32' : '#c62828' }}>
+                                                    {isIncome ? '+' : '-'}{fmtEur(transaction.amount)} €
+                                                </div>
+                                                <button onClick={(e) => { e.stopPropagation(); onDelete(transaction.id); }}
+                                                    style={{ background:'none', border:'none', color:'#ffcdd2', cursor:'pointer', fontSize:'11px', marginTop:'2px', padding:0 }}>
+                                                    elimina
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
                         );
                     })}
-                </ul>
+                    {transactions.length === 0 && (
+                        <div style={{ textAlign:'center', padding:'40px 20px', color:'#bbb' }}>
+                            <div style={{ fontSize:'40px', marginBottom:'10px' }}>📭</div>
+                            <div>Nessuna transazione</div>
+                        </div>
+                    )}
+                </div>
                 {editingTransaction && (
                     <EditTransactionModal
                         transaction={editingTransaction}
                         onClose={() => setEditingTransaction(null)}
-                        onSave={(updated) => {
-                            if (onEdit) onEdit(updated);
-                            setEditingTransaction(null);
-                        }}
-                        onDelete={(id) => {
-                            onDelete(id);
-                            setEditingTransaction(null);
-                        }}
+                        onSave={(updated) => { if (onEdit) onEdit(updated); setEditingTransaction(null); }}
+                        onDelete={(id) => { onDelete(id); setEditingTransaction(null); }}
                     />
                 )}
                 </>
             );
         }
+
 
         function EditTransactionModal({ transaction, onClose, onSave, onDelete }) {
             const [type, setType] = React.useState(transaction.type);
