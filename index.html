@@ -1661,8 +1661,10 @@
             // ============ CARICA DATI ACCOUNT ATTIVO ============
             useEffect(() => {
                 if (!activeAccountId) return;
+                // Cattura il profilo corrente — evita stale closure se l'utente cambia profilo rapidamente
+                const thisAccountId = activeAccountId;
                 
-                const prefix = `account_${activeAccountId}_`;
+                const prefix = 'account_' + thisAccountId + '_';
                 const savedBudgets = localStorage.getItem(prefix + 'budgets');
                 const savedSettings = localStorage.getItem(prefix + 'settings');
                 
@@ -1673,59 +1675,70 @@
                     defaultAccount: 'all'
                 });
                 
-                // Carica transazioni da IndexedDB
-                isLoadingTransactions.current = true;
-                setTransactions([]);
-                window.loadTransactionsFromDB(activeAccountId).then(async (txs) => {
-                    // Migrazione: se IndexedDB è vuoto, controlla localStorage vecchio
-                    if (txs.length === 0) {
-                        const old = localStorage.getItem(prefix + 'transactions');
-                        if (old) {
-                            try {
-                                const oldTxs = JSON.parse(old);
-                                if (oldTxs.length > 0) {
-                                    window.saveTransactionsToDB(activeAccountId, oldTxs).then(() => {
-                                        window.deleteTransactionsFromDB(activeAccountId);
-                                        isLoadingTransactions.current = false;
-                                        setTransactions(oldTxs);
-                                    });
-                                    return;
-                                }
-                            } catch(e) {}
-                        }
-                        // IndexedDB vuoto e localStorage vuoto → prova Firestore
-                        // (solo se NON abbiamo appena fatto un reset locale)
-                        const skipKey = 'skipFirestoreLoad_' + activeAccountId;
-                        const shouldSkip = sessionStorage.getItem(skipKey);
-                        if (!shouldSkip && window.FB_READY && userRef.current) {
-                            try {
-                                const firestoreTxs = await window.loadTransactionsFromFirestore(
-                                    activeAccountId, userRef.current.uid, sharedProfiles.current
-                                );
-                                if (firestoreTxs && firestoreTxs.length > 0) {
-                                    await window.saveTransactionsToDB(activeAccountId, firestoreTxs);
-                                    isLoadingTransactions.current = false;
-                                    setTransactions(firestoreTxs);
-                                    return;
-                                }
-                            } catch(e) {
-                                console.error('Firestore fallback load error:', e);
-                            }
-                        }
-                    }
-                    isLoadingTransactions.current = false;
-                    setTransactions(txs);
-                }).catch((e) => {
-                    console.error('Errore caricamento IndexedDB:', e);
-                    const old = localStorage.getItem(prefix + 'transactions');
-                    setTransactions(old ? JSON.parse(old) : []);
-                });
-                
-                // Reset filtri
+                // Reset filtri subito
                 setCategoryFilter(null);
                 setTransfersOnlyFilter(false);
                 setTypeFilter('all');
                 setSelectedAccount('all');
+
+                // Carica transazioni da IndexedDB
+                isLoadingTransactions.current = true;
+                setTransactions([]);
+                
+                const loadForProfile = async () => {
+                    try {
+                        let txs = await window.loadTransactionsFromDB(thisAccountId);
+                        
+                        // Se il profilo è cambiato nel frattempo, abbandona
+                        if (thisAccountId !== activeAccountId) return;
+
+                        // Migrazione: se IndexedDB è vuoto, controlla localStorage vecchio
+                        if (txs.length === 0) {
+                            const oldKey = localStorage.getItem(prefix + 'transactions');
+                            if (oldKey) {
+                                try {
+                                    const oldTxs = JSON.parse(oldKey);
+                                    if (oldTxs.length > 0) {
+                                        await window.saveTransactionsToDB(thisAccountId, oldTxs);
+                                        if (thisAccountId !== activeAccountId) return;
+                                        isLoadingTransactions.current = false;
+                                        setTransactions(oldTxs);
+                                        return;
+                                    }
+                                } catch(e) {}
+                            }
+                            // IndexedDB e localStorage vuoti → prova Firestore
+                            const skipKey = 'skipFirestoreLoad_' + thisAccountId;
+                            if (!sessionStorage.getItem(skipKey) && window.FB_READY && userRef.current) {
+                                try {
+                                    const firestoreTxs = await window.loadTransactionsFromFirestore(
+                                        thisAccountId, userRef.current.uid, sharedProfiles.current
+                                    );
+                                    if (thisAccountId !== activeAccountId) return;
+                                    if (firestoreTxs && firestoreTxs.length > 0) {
+                                        await window.saveTransactionsToDB(thisAccountId, firestoreTxs);
+                                        if (thisAccountId !== activeAccountId) return;
+                                        isLoadingTransactions.current = false;
+                                        setTransactions(firestoreTxs);
+                                        return;
+                                    }
+                                } catch(e) {
+                                    console.error('Firestore fallback load error:', e);
+                                }
+                            }
+                        }
+                        if (thisAccountId !== activeAccountId) return;
+                        isLoadingTransactions.current = false;
+                        setTransactions(txs);
+                    } catch(e) {
+                        console.error('Errore caricamento profilo:', e);
+                        if (thisAccountId !== activeAccountId) return;
+                        isLoadingTransactions.current = false;
+                        setTransactions([]);
+                    }
+                };
+                
+                loadForProfile();
             }, [activeAccountId]);
 
             // ============ SALVA DATI ACCOUNT ATTIVO ============
@@ -1735,11 +1748,18 @@
 
                 if (!activeAccountId || transactions.length === 0) return;
                 if (isLoadingTransactions.current) return;
-                // Salva solo su IndexedDB locale — Firestore viene aggiornato
-                // in modo esplicito da addTransaction/deleteTransaction/editTransaction
-                window.saveTransactionsToDB(activeAccountId, transactions).catch((e) => {
-                    console.error('Errore salvataggio IndexedDB:', e);
-                });
+                // Cattura profilo corrente — evita salvataggio su profilo sbagliato
+                const saveProfileId = activeAccountId;
+                const saveTxs = transactions;
+                // Piccolo debounce: aspetta 200ms prima di salvare
+                // (protegge contro salvataggi durante il cambio profilo)
+                const timer = setTimeout(() => {
+                    if (saveProfileId !== activeAccountId) return;
+                    window.saveTransactionsToDB(saveProfileId, saveTxs).catch((e) => {
+                        console.error('Errore salvataggio IndexedDB:', e);
+                    });
+                }, 200);
+                return () => clearTimeout(timer);
             }, [transactions, activeAccountId]);
 
             // ============ REAL-TIME LISTENER (profili condivisi) ============
