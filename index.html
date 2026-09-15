@@ -3340,17 +3340,6 @@
                                         {syncStatus === 'idle'    && '☁️'}
                                     </button>
                                 )}
-                                {user && user.uid === ADMIN_UID && (
-                                    <button onClick={() => setShowAdminPanel(true)}
-                                        style={{ position:'relative', background:'rgba(255,255,255,0.2)', border:'none', color:'white', padding:'6px 10px', borderRadius:'8px', cursor:'pointer', fontSize:'18px' }}>
-                                        &#128737;
-                                        {pendingCount > 0 && (
-                                            <span style={{ position:'absolute', top:'-4px', right:'-4px', background:'#e53935', color:'white', borderRadius:'50%', width:'18px', height:'18px', fontSize:'11px', fontWeight:'800', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                                                {pendingCount}
-                                            </span>
-                                        )}
-                                    </button>
-                                )}
                                 {/* Avatar utente / login */}
                                 {user ? (
                                     <button
@@ -3418,14 +3407,15 @@
                                 {/* ⚙️ accanto al selettore conti */}
                                 <button
                                     onClick={() => setShowSettingsModal(true)}
-                                    style={{
-                                        background: 'rgba(255,255,255,0.2)',
-                                        border: 'none', color: 'white',
-                                        padding: '8px 10px', borderRadius: '8px',
-                                        cursor: 'pointer', fontSize: '18px',
-                                        flexShrink: 0
-                                    }}
-                                >⚙️</button>
+                                    style={{ background:'rgba(255,255,255,0.2)', border:'none', color:'white', padding:'8px 10px', borderRadius:'8px', cursor:'pointer', fontSize:'18px', flexShrink:0, position:'relative' }}
+                                >
+                                    ⚙️
+                                    {user && user.uid === ADMIN_UID && pendingCount > 0 && (
+                                        <span style={{ position:'absolute', top:'-4px', right:'-4px', background:'#e53935', color:'white', borderRadius:'50%', minWidth:'18px', height:'18px', fontSize:'11px', fontWeight:'800', display:'flex', alignItems:'center', justifyContent:'center', padding:'0 3px' }}>
+                                            {pendingCount}
+                                        </span>
+                                    )}
+                                </button>
                             </div>
                             
                             {/* Selettore periodo: chip */}
@@ -3987,6 +3977,8 @@
                     {showSettingsModal && (
                         <SettingsModal 
                             onClose={() => setShowSettingsModal(false)}
+                            onOpenAdmin={() => { setShowSettingsModal(false); setTimeout(() => setShowAdminPanel(true), 150); }}
+                            adminPendingCount={pendingCount}
                             onExportCSV={exportCSV}
                             onExportBackup={exportBackup}
                             onImportBackup={importBackup}
@@ -6869,7 +6861,7 @@
         }
 
 
-        function SettingsModal({ onClose, settings, onSave, handleFileUpload, accounts, activeAccountId, getActiveAccount, deleteAccount, setShowSQLiteImportModal, setShowManageCategoriesModal, setShowManageAccountsModal, onExportCSV, onExportBackup, onImportBackup, userRef, sharedProfiles, onReauth, geminiApiKey, onSaveGeminiKey }) {
+        function SettingsModal({ onClose, settings, onSave, handleFileUpload, accounts, activeAccountId, getActiveAccount, deleteAccount, setShowSQLiteImportModal, setShowManageCategoriesModal, setShowManageAccountsModal, onExportCSV, onExportBackup, onImportBackup, userRef, sharedProfiles, onReauth, geminiApiKey, onSaveGeminiKey, onOpenAdmin, adminPendingCount }) {
             const [monthStartDay, setMonthStartDay] = useState(settings.monthStartDay);
 
             const handleSubmit = (e) => {
@@ -7116,6 +7108,20 @@
                                 <input type="file" accept=".json" onChange={onImportBackup} style={{ width: '100%', padding: '10px', border: '2px dashed #3f51b5', borderRadius: '8px', cursor: 'pointer', background: 'white', fontSize: '12px' }} />
                                 <div style={{ fontSize: '11px', color: '#999', marginTop: '6px' }}>Il ripristino sovrascrive i dati attuali.</div>
                             </div>
+
+                            {onOpenAdmin && window.FB_READY && window.FB && window.FB.auth && window.FB.auth.currentUser && window.FB.auth.currentUser.uid === ADMIN_UID && (
+                                <div style={{ marginBottom:'20px' }}>
+                                    <button type="button" onClick={onOpenAdmin}
+                                        style={{ width:'100%', padding:'14px', border:'none', borderRadius:'12px', background:'linear-gradient(135deg,#667eea,#764ba2)', color:'white', fontWeight:'800', fontSize:'15px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'10px' }}>
+                                        <span>&#128737; Pannello Admin</span>
+                                        {adminPendingCount > 0 && (
+                                            <span style={{ background:'#e53935', color:'white', borderRadius:'12px', padding:'2px 8px', fontSize:'12px', marginLeft:'8px' }}>
+                                                {adminPendingCount} in attesa
+                                            </span>
+                                        )}
+                                    </button>
+                                </div>
+                            )}
 
                             <div style={{ 
                                 padding: '15px', 
