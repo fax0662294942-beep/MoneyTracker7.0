@@ -1389,6 +1389,7 @@
             const [userStatus, setUserStatus] = useState(null);
             const [pendingCount, setPendingCount] = useState(0);
             const [showAdminPanel, setShowAdminPanel] = useState(false);
+            const [showAddMenu, setShowAddMenu] = useState(false);
             const [isSyncing, setIsSyncing] = useState(false);
             const [showShareModal, setShowShareModal] = useState(false); // modale condivisione
             const [showJoinModal, setShowJoinModal] = useState(false);   // modale unisciti
@@ -1408,6 +1409,7 @@
             const [showSQLiteImportModal, setShowSQLiteImportModal] = useState(false);
             const [showManageCategoriesModal, setShowManageCategoriesModal] = useState(false);
             const [showManageAccountsModal, setShowManageAccountsModal] = useState(false);
+            const [showManageTagsModal, setShowManageTagsModal] = useState(false);
             const [categoriesVersion, setCategoriesVersion] = useState(0);
 
             // ============ DEBITI ============
@@ -3878,18 +3880,42 @@
                         </button>
                     )}
 
-                    {/* Bottone 📷 scansione scontrino — sempre visibile */}
+                    {/* Bottone + aggiungi — menu con opzioni */}
                     <button
                         className="fab"
-                        onClick={() => setShowReceiptScan(true)}
+                        onClick={() => setShowAddMenu(true)}
                         style={{
                             right: accounts.length > 1 ? '160px' : '80px',
-                            background: 'linear-gradient(135deg, #4caf50 0%, #388e3c 100%)'
+                            background: 'linear-gradient(135deg, #4caf50 0%, #2e7d32 100%)',
+                            fontSize: '28px', fontWeight: '300'
                         }}
-                        title="Scansiona scontrino"
+                        title="Aggiungi"
                     >
-                        📷
+                        +
                     </button>
+
+                    {/* Menu aggiungi */}
+                    {showAddMenu && (
+                        <div style={{ position:'fixed', inset:0, zIndex:5000, background:'rgba(0,0,0,0.5)' }}
+                            onClick={() => setShowAddMenu(false)}>
+                            <div style={{ position:'absolute', bottom:'90px', right:'16px', background:'white', borderRadius:'16px', overflow:'hidden', boxShadow:'0 8px 30px rgba(0,0,0,0.25)', minWidth:'220px' }}
+                                onClick={e => e.stopPropagation()}>
+                                <div style={{ padding:'10px 16px', background:'#f8f9fa', fontSize:'11px', color:'#999', fontWeight:'700', textTransform:'uppercase' }}>
+                                    Aggiungi
+                                </div>
+                                <button onClick={() => { setShowAddMenu(false); setShowModal(true); }}
+                                    style={{ width:'100%', padding:'14px 16px', border:'none', borderBottom:'1px solid #f0f0f0', background:'white', textAlign:'left', cursor:'pointer', display:'flex', alignItems:'center', gap:'12px', fontSize:'15px', fontWeight:'600', color:'#333' }}>
+                                    <span style={{ fontSize:'22px' }}>&#9997;</span>
+                                    Aggiungi manualmente
+                                </button>
+                                <button onClick={() => { setShowAddMenu(false); setShowReceiptScan(true); }}
+                                    style={{ width:'100%', padding:'14px 16px', border:'none', background:'white', textAlign:'left', cursor:'pointer', display:'flex', alignItems:'center', gap:'12px', fontSize:'15px', fontWeight:'600', color:'#333' }}>
+                                    <span style={{ fontSize:'22px' }}>&#128247;</span>
+                                    Scansiona scontrino
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
                     {showModal && (
                         <AddTransactionModal 
@@ -3979,6 +4005,12 @@
                         />
                     )}
 
+                    {showManageTagsModal && (
+                        <ManageTagsModal
+                            onClose={() => setShowManageTagsModal(false)}
+                        />
+                    )}
+
                     {showManageAccountsModal && (
                         <ManageAccountsModal
                             onClose={() => { setShowManageAccountsModal(false); setCategoriesVersion(v => v + 1); }}
@@ -3999,6 +4031,7 @@
                             onClose={() => setShowSettingsModal(false)}
                             onOpenAdmin={() => { setShowSettingsModal(false); setTimeout(() => setShowAdminPanel(true), 150); }}
                             adminPendingCount={pendingCount}
+                            setShowManageTagsModal={setShowManageTagsModal}
                             onExportCSV={exportCSV}
                             onExportBackup={exportBackup}
                             onImportBackup={importBackup}
@@ -4978,9 +5011,12 @@
             var [note, setNote] = React.useState(receiptPreFill && receiptPreFill.note ? receiptPreFill.note : '');
             var [date, setDate] = React.useState(receiptPreFill && receiptPreFill.date ? receiptPreFill.date : new Date().toISOString().split('T')[0]);
             var [selectedTags, setSelectedTags] = React.useState([]);
+            var [subcategory, setSubcategory] = React.useState('');
             var chipsRef = React.useRef(null);
 
             var cats = (type === 'expense' ? allCategories.expense : allCategories.income).filter(function(c) { return !c.archived; });
+            var selectedCatObj = cats.find(function(c) { return c.id === category; });
+            var subcats = (selectedCatObj && selectedCatObj.subcategories) ? selectedCatObj.subcategories : [];
             var selectedCat = cats.find(function(c) { return c.id === category; });
             var selectedAcc = allAccounts.find(function(a) { return a.id === account; });
 
@@ -5001,13 +5037,15 @@
                 return dt.getDate() + ' ' + months[dt.getMonth()];
             };
 
+            React.useEffect(function() { setSubcategory(''); }, [category, type]);
+
             var scrollToChips = function() {
                 if (chipsRef.current) chipsRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
             };
 
             var handleSubmit = function() {
                 if (!amount || parseFloat(amount) <= 0 || !category) return;
-                onAdd({ id: Date.now(), type: type, amount: parseFloat(amount), category: category, account: account, note: note, date: new Date(date + 'T12:00:00').toISOString(), tags: selectedTags });
+                onAdd({ id: Date.now(), type: type, amount: parseFloat(amount), category: category, subcategory: subcategory || undefined, account: account, note: note, date: new Date(date + 'T12:00:00').toISOString(), tags: selectedTags });
             };
 
             var canSave = amount && parseFloat(amount) > 0 && category;
@@ -5093,6 +5131,25 @@
                                 })}
                             </div>
                         </div>
+
+                        {/* Chips sottocategorie */}
+                        {subcats.length > 0 && (
+                            <div style={{ overflowX:'auto', whiteSpace:'nowrap', padding:'8px 12px 6px', borderBottom:'1px solid #f0f0f0', flexShrink:0, background:'#fafafa', scrollbarWidth:'none' }}>
+                                <button type="button" onClick={function() { setSubcategory(''); }}
+                                    style={{ display:'inline-flex', alignItems:'center', marginRight:'8px', padding:'5px 11px', borderRadius:'16px', border: !subcategory ? 'none' : '1.5px solid #ddd', background: !subcategory ? '#aaa' : 'white', color: !subcategory ? 'white' : '#777', fontWeight:'600', fontSize:'12px', cursor:'pointer', whiteSpace:'nowrap' }}>
+                                    Tutto
+                                </button>
+                                {subcats.map(function(sc) {
+                                    var sel = subcategory === sc.id;
+                                    return (
+                                        <button key={sc.id} type="button" onClick={function() { setSubcategory(sel ? '' : sc.id); }}
+                                            style={{ display:'inline-flex', alignItems:'center', marginRight:'8px', padding:'5px 11px', borderRadius:'16px', border: sel ? 'none' : '1.5px solid #ddd', background: sel ? catColor : 'white', color: sel ? 'white' : '#555', fontWeight: sel ? '800' : '500', fontSize:'12px', cursor:'pointer', whiteSpace:'nowrap' }}>
+                                            {sc.name}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
 
                         {/* Campi */}
                         <div style={{ padding:'12px 16px', flex:1 }}>
@@ -5619,10 +5676,21 @@
             const [name, setName] = React.useState(category.name);
             const [icon, setIcon] = React.useState(category.icon);
             const [color, setColor] = React.useState(category.color);
+            const [subcats, setSubcats] = React.useState(category.subcategories || []);
+            const [newSubcat, setNewSubcat] = React.useState('');
+
+            const addSubcat = function() {
+                if (!newSubcat.trim()) return;
+                setSubcats([...subcats, { id: 'sc_' + Date.now(), name: newSubcat.trim() }]);
+                setNewSubcat('');
+            };
+            const removeSubcat = function(id) {
+                setSubcats(subcats.filter(function(s) { return s.id !== id; }));
+            };
 
             const handleSubmit = (e) => {
                 e.preventDefault();
-                onSave({ name, icon, color });
+                onSave({ name, icon, color, subcategories: subcats });
             };
 
             return (
@@ -5717,6 +5785,34 @@
                                 </div>
                                 <div style={{ fontWeight: 'bold', color: color }}>
                                     {name}
+                                </div>
+                            </div>
+
+                            {/* Sottocategorie */}
+                            <div style={{ marginBottom:'16px', padding:'0 20px' }}>
+                                <label style={{ display:'block', fontWeight:'700', marginBottom:'8px', fontSize:'13px', color:'#555' }}>
+                                    Sottocategorie (opzionali)
+                                </label>
+                                <div style={{ display:'flex', gap:'6px', marginBottom:'8px' }}>
+                                    <input type="text" value={newSubcat}
+                                        onChange={function(e) { setNewSubcat(e.target.value); }}
+                                        onKeyDown={function(e) { if (e.key === 'Enter') { e.preventDefault(); addSubcat(); } }}
+                                        placeholder="Es. Supermercato, Bar..."
+                                        style={{ flex:1, padding:'8px 10px', borderRadius:'8px', border:'1.5px solid #e0e0e0', fontSize:'13px', outline:'none' }} />
+                                    <button type="button" onClick={addSubcat}
+                                        style={{ padding:'8px 14px', border:'none', borderRadius:'8px', background:'#667eea', color:'white', fontWeight:'800', cursor:'pointer', fontSize:'16px' }}>+</button>
+                                </div>
+                                <div style={{ display:'flex', flexWrap:'wrap', gap:'6px' }}>
+                                    {subcats.map(function(sc) {
+                                        return (
+                                            <div key={sc.id} style={{ display:'inline-flex', alignItems:'center', gap:'5px', padding:'4px 10px', borderRadius:'14px', background:color+'20', border:'1px solid '+color+'50' }}>
+                                                <span style={{ fontSize:'13px', color:color, fontWeight:'600' }}>{sc.name}</span>
+                                                <button type="button" onClick={function() { removeSubcat(sc.id); }}
+                                                    style={{ background:'none', border:'none', color:color, cursor:'pointer', fontSize:'14px', lineHeight:1, padding:0, opacity:0.7 }}>x</button>
+                                            </div>
+                                        );
+                                    })}
+                                    {subcats.length === 0 && <span style={{ fontSize:'12px', color:'#bbb' }}>Nessuna sottocategoria</span>}
                                 </div>
                             </div>
 
@@ -6894,7 +6990,7 @@
         }
 
 
-        function SettingsModal({ onClose, settings, onSave, handleFileUpload, accounts, activeAccountId, getActiveAccount, deleteAccount, setShowSQLiteImportModal, setShowManageCategoriesModal, setShowManageAccountsModal, onExportCSV, onExportBackup, onImportBackup, userRef, sharedProfiles, onReauth, geminiApiKey, onSaveGeminiKey, onOpenAdmin, adminPendingCount }) {
+        function SettingsModal({ onClose, settings, onSave, handleFileUpload, accounts, activeAccountId, getActiveAccount, deleteAccount, setShowSQLiteImportModal, setShowManageCategoriesModal, setShowManageAccountsModal, onExportCSV, onExportBackup, onImportBackup, userRef, sharedProfiles, onReauth, geminiApiKey, onSaveGeminiKey, onOpenAdmin, adminPendingCount, setShowManageTagsModal }) {
             const [monthStartDay, setMonthStartDay] = useState(settings.monthStartDay);
 
             const handleSubmit = (e) => {
@@ -7121,6 +7217,13 @@
                                     }}
                                 >
                                     💳 Gestisci Conti
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => { onClose(); setTimeout(() => setShowManageTagsModal(true), 200); }}
+                                    style={{ padding:'12px', background:'#f3e5f5', color:'#7b1fa2', border:'2px solid #7b1fa2', borderRadius:'8px', cursor:'pointer', fontWeight:'bold', fontSize:'13px' }}
+                                >
+                                    🏷 Gestisci Tag
                                 </button>
                             </div>
 
@@ -7514,6 +7617,114 @@
         }
 
         // ============ MANAGE CATEGORIES MODAL ============
+        function ManageTagsModal({ onClose }) {
+            var TAG_COLORS = ['#e53935','#e91e63','#9c27b0','#673ab7','#3f51b5','#2196f3','#009688','#4caf50','#ff9800','#795548','#607d8b','#f06292'];
+            var [tags, setTags] = React.useState(getTagsFromStorage());
+            var [newName, setNewName] = React.useState('');
+            var [newColor, setNewColor] = React.useState('#667eea');
+            var [editId, setEditId] = React.useState(null);
+
+            var save = function(updated) {
+                saveTagsToStorage(updated);
+                setTags(updated);
+            };
+
+            var addTag = function() {
+                if (!newName.trim()) return;
+                var tag = { id: 'tag_' + Date.now(), name: newName.trim(), color: newColor };
+                save([...tags, tag]);
+                setNewName(''); setNewColor('#667eea');
+            };
+
+            var deleteTag = function(id) {
+                if (!window.confirm('Eliminare questo tag?')) return;
+                save(tags.filter(function(t) { return t.id !== id; }));
+            };
+
+            var updateTag = function(id, name, color) {
+                save(tags.map(function(t) { return t.id === id ? Object.assign({}, t, { name: name, color: color }) : t; }));
+                setEditId(null);
+            };
+
+            return (
+                <div className="modal" onClick={onClose}>
+                    <div className="modal-content" onClick={function(e) { e.stopPropagation(); }}>
+                        <div className="modal-header">
+                            <h2 className="modal-title">🏷 Gestisci Tag</h2>
+                            <button className="close-btn" onClick={onClose}>x</button>
+                        </div>
+                        <div style={{ padding:'16px' }}>
+                            {/* Aggiungi nuovo tag */}
+                            <div style={{ background:'#f8f9fa', borderRadius:'12px', padding:'14px', marginBottom:'16px' }}>
+                                <div style={{ fontWeight:'700', marginBottom:'10px', color:'#444', fontSize:'14px' }}>Nuovo tag</div>
+                                <input type="text" value={newName} onChange={function(e) { setNewName(e.target.value); }}
+                                    placeholder="Nome tag..." onKeyDown={function(e) { if (e.key === 'Enter') addTag(); }}
+                                    style={{ width:'100%', padding:'10px 12px', borderRadius:'8px', border:'1.5px solid #e0e0e0', fontSize:'14px', boxSizing:'border-box', marginBottom:'10px', outline:'none' }} />
+                                <div style={{ display:'flex', gap:'8px', flexWrap:'wrap', marginBottom:'12px' }}>
+                                    {TAG_COLORS.map(function(c) {
+                                        return (
+                                            <div key={c} onClick={function() { setNewColor(c); }}
+                                                style={{ width:'28px', height:'28px', borderRadius:'50%', background:c, cursor:'pointer', border: newColor === c ? '3px solid #333' : '3px solid transparent', boxSizing:'border-box' }} />
+                                        );
+                                    })}
+                                </div>
+                                <button onClick={addTag} disabled={!newName.trim()}
+                                    style={{ width:'100%', padding:'11px', border:'none', borderRadius:'8px', background: newName.trim() ? newColor : '#ccc', color:'white', fontWeight:'800', cursor: newName.trim() ? 'pointer' : 'not-allowed', fontSize:'14px' }}>
+                                    + Aggiungi tag
+                                </button>
+                            </div>
+
+                            {/* Lista tag esistenti */}
+                            {tags.length === 0 && (
+                                <div style={{ textAlign:'center', color:'#bbb', padding:'20px' }}>Nessun tag ancora</div>
+                            )}
+                            {tags.map(function(tag) {
+                                var isEditing = editId === tag.id;
+                                return (
+                                    <div key={tag.id} style={{ background:'white', borderRadius:'10px', padding:'12px', marginBottom:'8px', boxShadow:'0 1px 6px rgba(0,0,0,0.08)', border:'1px solid #f0f0f0' }}>
+                                        {isEditing ? (
+                                            <EditTagInline tag={tag} colors={TAG_COLORS} onSave={updateTag} onCancel={function() { setEditId(null); }} />
+                                        ) : (
+                                            <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+                                                <div style={{ width:'16px', height:'16px', borderRadius:'50%', background:tag.color, flexShrink:0 }} />
+                                                <span style={{ flex:1, fontWeight:'600', fontSize:'14px' }}>{tag.name}</span>
+                                                <button onClick={function() { setEditId(tag.id); }}
+                                                    style={{ background:'none', border:'none', color:'#667eea', cursor:'pointer', fontSize:'12px', padding:'4px 8px' }}>Modifica</button>
+                                                <button onClick={function() { deleteTag(tag.id); }}
+                                                    style={{ background:'none', border:'none', color:'#e53935', cursor:'pointer', fontSize:'12px', padding:'4px 8px' }}>Elimina</button>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function EditTagInline({ tag, colors, onSave, onCancel }) {
+            var [name, setName] = React.useState(tag.name);
+            var [color, setColor] = React.useState(tag.color);
+            return (
+                <div>
+                    <input type="text" value={name} onChange={function(e) { setName(e.target.value); }}
+                        style={{ width:'100%', padding:'8px', borderRadius:'6px', border:'1.5px solid #667eea', fontSize:'14px', boxSizing:'border-box', marginBottom:'8px', outline:'none' }} />
+                    <div style={{ display:'flex', gap:'6px', flexWrap:'wrap', marginBottom:'10px' }}>
+                        {colors.map(function(c) {
+                            return <div key={c} onClick={function() { setColor(c); }} style={{ width:'24px', height:'24px', borderRadius:'50%', background:c, cursor:'pointer', border: color === c ? '3px solid #333' : '3px solid transparent', boxSizing:'border-box' }} />;
+                        })}
+                    </div>
+                    <div style={{ display:'flex', gap:'8px' }}>
+                        <button onClick={function() { onSave(tag.id, name, color); }}
+                            style={{ flex:1, padding:'8px', border:'none', borderRadius:'6px', background:'#667eea', color:'white', fontWeight:'700', cursor:'pointer' }}>Salva</button>
+                        <button onClick={onCancel}
+                            style={{ flex:1, padding:'8px', border:'1px solid #ddd', borderRadius:'6px', background:'white', cursor:'pointer' }}>Annulla</button>
+                    </div>
+                </div>
+            );
+        }
+
         function ManageCategoriesModal({ onClose }) {
             const [cats, setCats] = useState(getCategoriesFromStorage());
             const [tab, setTab] = useState('expense');
