@@ -5145,15 +5145,9 @@
                             })}
                         </div>
 
-                        {/* Chips sottocategorie — riga orizzontale scorrevole */}
+                        {/* Chips sottocategorie — seconda riga, stessa logica categorie */}
                         {subcats.length > 0 && (
-                            <div style={{ overflowX:'auto', whiteSpace:'nowrap', padding:'8px 12px 6px', borderBottom:'1px solid #f0f0f0', flexShrink:0, background:'#fafafa', scrollbarWidth:'none' }}>
-                                <button type="button"
-                                    onClick={function() { setSubcategory(''); }}
-                                    onTouchEnd={function(e) { e.preventDefault(); setSubcategory(''); }}
-                                    style={{ display:'inline-flex', alignItems:'center', marginRight:'8px', padding:'5px 11px', borderRadius:'16px', border: !subcategory ? 'none' : '1.5px solid #ddd', background: !subcategory ? '#aaa' : 'white', color: !subcategory ? 'white' : '#777', fontWeight:'600', fontSize:'12px', cursor:'pointer', whiteSpace:'nowrap', touchAction:'manipulation', WebkitTapHighlightColor:'transparent' }}>
-                                    Tutto
-                                </button>
+                            <div style={{ overflowX:'auto', whiteSpace:'nowrap', padding:'8px 12px 8px', borderBottom:'1px solid #f0f0f0', flexShrink:0, background:'white', scrollbarWidth:'none', WebkitOverflowScrolling:'touch' }}>
                                 {subcats.map(function(sc) {
                                     var sel = subcategory === sc.id;
                                     var doSel = function() { setSubcategory(sel ? '' : sc.id); };
@@ -5161,7 +5155,15 @@
                                         <button key={sc.id} type="button"
                                             onClick={doSel}
                                             onTouchEnd={function(e) { e.preventDefault(); doSel(); }}
-                                            style={{ display:'inline-flex', alignItems:'center', marginRight:'8px', padding:'5px 11px', borderRadius:'16px', border: sel ? 'none' : '1.5px solid #ddd', background: sel ? catColor : 'white', color: sel ? 'white' : '#555', fontWeight: sel ? '800' : '500', fontSize:'12px', cursor:'pointer', whiteSpace:'nowrap', touchAction:'manipulation', WebkitTapHighlightColor:'transparent' }}>
+                                            style={{ display:'inline-flex', alignItems:'center', gap:'4px', marginRight:'8px',
+                                                padding:'7px 13px', borderRadius:'20px',
+                                                border: sel ? 'none' : '1.5px solid #ddd',
+                                                background: sel ? catColor : 'white',
+                                                color: sel ? 'white' : '#555',
+                                                fontWeight: sel ? '800' : '500', fontSize:'13px',
+                                                cursor:'pointer', whiteSpace:'nowrap',
+                                                touchAction:'manipulation', WebkitTapHighlightColor:'transparent',
+                                                boxShadow: sel ? '0 2px 8px rgba(0,0,0,0.2)' : 'none' }}>
                                             {sc.name}
                                         </button>
                                     );
