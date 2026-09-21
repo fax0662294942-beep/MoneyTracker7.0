@@ -2203,6 +2203,16 @@
                 localStorage.setItem('moneyTrackerActiveAccount', accountId);
                 setCurrentPage('categories');
 
+                // Salva su Firestore così al riavvio ricorda l'ultimo account usato
+                if (window.FB_READY && userRef.current) {
+                    try {
+                        const { db, doc, updateDoc } = window.FB;
+                        updateDoc(doc(db, 'users', userRef.current.uid), {
+                            activeAccountId: accountId
+                        }).catch(function() {});
+                    } catch(e) {}
+                }
+
                 // Carica transazioni da Firestore se IndexedDB è vuoto per questo profilo
                 if (window.FB_READY && userRef.current) {
                     try {
