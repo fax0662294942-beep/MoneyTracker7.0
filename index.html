@@ -5119,19 +5119,23 @@
                     {/* BODY scrollabile */}
                     <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column' }}>
 
-                        {/* Chips categorie — flexWrap evita conflitti scroll/touch su Android */}
-                        <div ref={chipsRef} style={{ display:'flex', flexWrap:'wrap', gap:'8px', padding:'10px 12px 8px', borderBottom:'1px solid #f0f0f0', flexShrink:0 }}>
+                        {/* Chips categorie — riga orizzontale scorrevole */}
+                        <div ref={chipsRef} style={{ overflowX:'auto', whiteSpace:'nowrap', padding:'10px 12px 8px', borderBottom:'1px solid #f0f0f0', flexShrink:0, scrollbarWidth:'none', WebkitOverflowScrolling:'touch' }}>
                             {cats.map(function(cat) {
                                 var sel = cat.id === category;
+                                var doSelect = function() { setCategory(sel ? '' : cat.id); };
                                 return (
-                                    <button key={cat.id} type="button" onClick={function() { setCategory(sel ? '' : cat.id); }}
-                                        style={{ display:'inline-flex', alignItems:'center', gap:'5px',
+                                    <button key={cat.id} type="button"
+                                        onClick={doSelect}
+                                        onTouchEnd={function(e) { e.preventDefault(); doSelect(); }}
+                                        style={{ display:'inline-flex', alignItems:'center', gap:'5px', marginRight:'8px',
                                             padding:'8px 14px', borderRadius:'20px',
                                             border: sel ? 'none' : '1.5px solid #ddd',
                                             background: sel ? (cat.color || typeColor) : 'white',
                                             color: sel ? 'white' : '#555',
                                             fontWeight: sel ? '800' : '500', fontSize:'13px',
-                                            cursor:'pointer', touchAction:'manipulation',
+                                            cursor:'pointer', whiteSpace:'nowrap',
+                                            touchAction:'manipulation',
                                             WebkitTapHighlightColor:'transparent',
                                             boxShadow: sel ? '0 2px 8px rgba(0,0,0,0.25)' : 'none' }}>
                                         <span>{cat.icon || ''}</span>
@@ -5141,18 +5145,23 @@
                             })}
                         </div>
 
-                        {/* Chips sottocategorie */}
+                        {/* Chips sottocategorie — riga orizzontale scorrevole */}
                         {subcats.length > 0 && (
-                            <div style={{ display:'flex', flexWrap:'wrap', gap:'6px', padding:'8px 12px 6px', borderBottom:'1px solid #f0f0f0', flexShrink:0, background:'#fafafa' }}>
-                                <button type="button" onClick={function() { setSubcategory(''); }}
-                                    style={{ padding:'5px 11px', borderRadius:'16px', border: !subcategory ? 'none' : '1.5px solid #ddd', background: !subcategory ? '#aaa' : 'white', color: !subcategory ? 'white' : '#777', fontWeight:'600', fontSize:'12px', cursor:'pointer', touchAction:'manipulation', WebkitTapHighlightColor:'transparent' }}>
+                            <div style={{ overflowX:'auto', whiteSpace:'nowrap', padding:'8px 12px 6px', borderBottom:'1px solid #f0f0f0', flexShrink:0, background:'#fafafa', scrollbarWidth:'none' }}>
+                                <button type="button"
+                                    onClick={function() { setSubcategory(''); }}
+                                    onTouchEnd={function(e) { e.preventDefault(); setSubcategory(''); }}
+                                    style={{ display:'inline-flex', alignItems:'center', marginRight:'8px', padding:'5px 11px', borderRadius:'16px', border: !subcategory ? 'none' : '1.5px solid #ddd', background: !subcategory ? '#aaa' : 'white', color: !subcategory ? 'white' : '#777', fontWeight:'600', fontSize:'12px', cursor:'pointer', whiteSpace:'nowrap', touchAction:'manipulation', WebkitTapHighlightColor:'transparent' }}>
                                     Tutto
                                 </button>
                                 {subcats.map(function(sc) {
                                     var sel = subcategory === sc.id;
+                                    var doSel = function() { setSubcategory(sel ? '' : sc.id); };
                                     return (
-                                        <button key={sc.id} type="button" onClick={function() { setSubcategory(sel ? '' : sc.id); }}
-                                            style={{ padding:'5px 11px', borderRadius:'16px', border: sel ? 'none' : '1.5px solid #ddd', background: sel ? catColor : 'white', color: sel ? 'white' : '#555', fontWeight: sel ? '800' : '500', fontSize:'12px', cursor:'pointer', touchAction:'manipulation', WebkitTapHighlightColor:'transparent' }}>
+                                        <button key={sc.id} type="button"
+                                            onClick={doSel}
+                                            onTouchEnd={function(e) { e.preventDefault(); doSel(); }}
+                                            style={{ display:'inline-flex', alignItems:'center', marginRight:'8px', padding:'5px 11px', borderRadius:'16px', border: sel ? 'none' : '1.5px solid #ddd', background: sel ? catColor : 'white', color: sel ? 'white' : '#555', fontWeight: sel ? '800' : '500', fontSize:'12px', cursor:'pointer', whiteSpace:'nowrap', touchAction:'manipulation', WebkitTapHighlightColor:'transparent' }}>
                                             {sc.name}
                                         </button>
                                     );
