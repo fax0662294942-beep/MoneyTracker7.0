@@ -58,7 +58,6 @@ jobs:
 
       - name: Sign APK
         run: |
-          # Generate keystore
           keytool -genkey -v \
             -keystore signing.keystore \
             -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
@@ -67,15 +66,20 @@ jobs:
             -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=MoneyTracker,O=Franco,C=IT"
 
+          BUILD_TOOLS=$(ls -d ${ANDROID_HOME}/build-tools/* | sort -V | tail -1)
           APK_PATH=$(find android/app/build/outputs/apk/release/ -name "*.apk" | head -1)
-          ${ANDROID_HOME}/build-tools/*/zipalign -v -p 4 "$APK_PATH" MoneyTracker-aligned.apk
-          ${ANDROID_HOME}/build-tools/*/apksigner sign \
+          echo "Build tools: $BUILD_TOOLS"
+          echo "APK: $APK_PATH"
+
+          $BUILD_TOOLS/zipalign -v -p 4 "$APK_PATH" MoneyTracker-aligned.apk
+          $BUILD_TOOLS/apksigner sign \
             --ks signing.keystore \
             --ks-key-alias "${{ secrets.ANDROID_KEY_ALIAS }}" \
             --ks-pass "pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
             --key-pass "pass:${{ secrets.ANDROID_KEY_PASSWORD }}" \
             --out MoneyTracker.apk \
             MoneyTracker-aligned.apk
+
           rm -f signing.keystore MoneyTracker-aligned.apk
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
