@@ -1,0 +1,13 @@
+{
+  "appId": "io.github.fax0662294942_beep.moneytracker",
+  "appName": "MoneyTracker",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": true,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}
